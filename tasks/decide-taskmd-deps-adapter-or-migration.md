@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Decide: adapter or one-time migration for taskmd dependencies
@@ -54,10 +54,23 @@ GO/NO-GO is escalated to the operator via the supervisor. This card does NOT
 close on verifier output. Close = decision recorded below + the follow-up
 implementation card written and linked.
 
-- Decision (recorded on close): ______
-- Follow-up card: ______ (adapter: extend hard-edge extraction in
-  `src/graph.ts`; migration: one-shot rewrite script + corpus run + AGENTS.md
-  update in the homelab repo)
+- Decision (recorded on close): **MIGRATION (Option B)** — operator ruling
+  2026-11-19.
+- Follow-up card: [migrate-taskmd-corpora](./migrate-taskmd-corpora.md)
+  (one-shot rewrite across both corpora + live run + checks; commits in the
+  corpus repos are the operator's separate word).
+
+## Resolution (operator ruling 2026-11-19) — MIGRATION
+
+Option B: one-time conversion. The adapter is a permanent compatibility
+tax levied on core (parse, graph, and every future `tsk check` release)
+against the format-is-the-interface doctrine — path is identity, and an
+id-keyed alias table grows a second identity system that never goes away.
+The migration costs once; the corpus comes out native and every downstream
+tool works unmodified. The old format stays recoverable in the corpus
+repos' git history — nothing is lost, the working tree simply moves on.
+
+Follow-up: [migrate-taskmd-corpora](./migrate-taskmd-corpora.md).
 
 ## Acceptance criteria
 
