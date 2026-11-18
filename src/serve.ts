@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, resolve, sep } from "node:path";
+import { DEFAULT_TERMINALS, loadConfig, terminalsOf } from "./config";
 import { discover } from "./discover";
 import type { Graph } from "./graph";
 import { buildGraph } from "./graph";
@@ -18,8 +19,11 @@ export type Snapshot = Readonly<{
   edges: Readonly<{ from: string; to: string; kind: "soft" | "hard" }>[];
 }>;
 
-export const snapshot = (graph: Graph): Snapshot => {
-  const blocked = hardBlocked(graph);
+export const snapshot = (
+  graph: Graph,
+  terminals: readonly string[] = DEFAULT_TERMINALS,
+): Snapshot => {
+  const blocked = hardBlocked(graph, terminals);
   return {
     nodes: graph.nodes.map((n) => ({
       path: n.path,
@@ -67,12 +71,14 @@ export const startServer = (roots: string[], port: number, host = "127.0.0.1") =
         // 204: a real response with zero bytes on the wire — kills the 404 console noise
         return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
       if (pathname === "/api/snapshot") {
-        const files = await discover(roots.length > 0 ? roots : ["."]);
+        const rs = roots.length > 0 ? roots : ["."];
+        const conf = loadConfig(rs);
+        const files = await discover(rs);
         const tasks = files.flatMap((f) => {
-          const r = parseFile(f, roots);
+          const r = parseFile(f, rs, conf);
           return r.ok ? [r.v] : [];
         });
-        return Response.json(snapshot(buildGraph(tasks)));
+        return Response.json(snapshot(buildGraph(tasks), terminalsOf(conf)));
       }
       if (pathname === "/api/doc") {
         const p = url.searchParams.get("path") ?? "";

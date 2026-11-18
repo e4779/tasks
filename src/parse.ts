@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import matter from "gray-matter";
+import { aliasMap, loadConfig, statusesOf, type TskConf } from "./config";
 
 export type Link = Readonly<{ raw: string; resolved: string }>;
 export type ParsedTask = Readonly<{
@@ -14,7 +15,6 @@ export type ParsedTask = Readonly<{
 }>;
 export type ParseResult = Readonly<{ ok: true; v: ParsedTask } | { ok: false; e: string }>;
 
-const KNOWN_STATUS = new Set(["pending", "in-progress", "done", "cancelled", "completed"]);
 // shortcut: links inside code fences are counted too; upgrade when cards carry fenced examples
 const MD_LINK = /\[[^\]]*\]\((?<raw>[^)\s]+)\)/g;
 // shortcut: no [[path|alias]] and no md targets with spaces; upgrade when the corpus uses them
@@ -22,9 +22,11 @@ const WIKI_LINK = /\[\[(?<raw>[^\]|]+)\]\]/g;
 
 const withExt = (raw: string, ext: string) => (ext && !raw.endsWith(ext) ? `${raw}${ext}` : raw);
 
-export const parseFile = (absPath: string, _roots: string[]): ParseResult => {
-  // roots deliberately unused in v0: every link kind resolves against the file's own dir
+export const parseFile = (absPath: string, roots: string[], conf?: TskConf): ParseResult => {
+  // roots feed the .tsk.conf chain: statuses vocab and aliases come from config,
+  // defaults reproduce the pre-config hardcodes exactly
   try {
+    const cfg = conf ?? loadConfig(roots);
     const { data: attrs, content } = matter(readFileSync(absPath, "utf8"));
     const dir = dirname(absPath);
     const resolveLink = (raw: string, ext: string): Link => {
@@ -38,6 +40,7 @@ export const parseFile = (absPath: string, _roots: string[]): ParseResult => {
       });
 
     const rawStatus = typeof attrs.status === "string" ? attrs.status : null;
+    const status = rawStatus === null ? null : (aliasMap(cfg).get(rawStatus) ?? rawStatus);
     return {
       ok: true,
       v: {
@@ -46,11 +49,9 @@ export const parseFile = (absPath: string, _roots: string[]): ParseResult => {
         attrs,
         links: [...collect(MD_LINK), ...collect(WIKI_LINK, ".md")],
         checkboxes: (content.match(/^\s*[-*] \[[ xX]\]/gm) ?? []).length,
-        status: rawStatus === "completed" ? "done" : rawStatus,
+        status,
         warnings:
-          rawStatus !== null && !KNOWN_STATUS.has(rawStatus)
-            ? [`unknown status: ${rawStatus}`]
-            : [],
+          status !== null && !statusesOf(cfg).has(status) ? [`unknown status: ${rawStatus}`] : [],
       },
     };
   } catch (e) {
