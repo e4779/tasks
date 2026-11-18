@@ -15,24 +15,16 @@ const by = (suffix: string) => snap.nodes.find((n) => n.path.endsWith(suffix));
 test("snapshot shape: every node carries exactly the viewer contract fields", () => {
   expect(snap.nodes.length).toBe(8); // 7 fixture tasks + missing-dep ghost
   for (const n of snap.nodes)
-    expect(Object.keys(n).sort()).toEqual([
-      "blocked",
-      "ghost",
-      "path",
-      "priority",
-      "status",
-      "title",
-    ]);
+    expect(Object.keys(n).sort()).toEqual(["blocked", "ghost", "path", "status", "title"]);
   for (const e of snap.edges) expect(["soft", "hard"]).toContain(e.kind);
 });
 
-test("snapshot flags ghosts, blocked cards, priorities; ghost hard edge survives", () => {
+test("snapshot flags ghosts, blocked cards; ghost hard edge survives", () => {
   expect(by("missing-dep.md")?.ghost).toBeTrue();
   expect(by("normal-card.md")?.ghost).toBeFalse();
   expect(by("blocked-card.md")?.blocked).toBeTrue(); // hard edge to pending + ghost
   expect(by("cyclic-a.md")?.blocked).toBeTrue(); // mutual hard-block
   expect(by("normal-card.md")?.blocked).toBeFalse();
-  expect(by("no-h1.md")?.priority).toBe("10");
   expect(snap.edges.some((e) => e.kind === "hard" && e.to.endsWith("missing-dep.md"))).toBeTrue();
 });
 

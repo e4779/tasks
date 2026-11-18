@@ -1,7 +1,7 @@
 import { el } from "./dom.js";
 
-// same lexical order as next.ts: priority string, then path breaks ties
-const key = (n) => `${n.priority ?? ""}\t${n.path}`;
+// same order as next.ts: path only
+const key = (n) => n.path;
 const undone = (n) => n.status === "pending" || n.status === "in-progress" || n.status === null;
 
 class TskList extends HTMLElement {

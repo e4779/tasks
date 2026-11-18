@@ -29,5 +29,8 @@
         "noExplicitAny": "warn"
       }
     }
+  },
+  "files": {
+    "includes": ["**", "!**/*.md"]
   }
 }

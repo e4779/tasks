@@ -23,8 +23,7 @@ test("blocked and non-actionable cards are filtered out", () => {
   expect(paths).not.toContain(fx("missing-dep.md")); // ghosts never surface
 });
 
-test("eligible cards sorted lexically by priority, then path", () => {
-  // no-h1 has priority "10", normal-card "2": lexical order puts "10" first
+test("eligible cards sorted by path", () => {
   expect(next.map((t) => t.path)).toEqual([fx("no-h1.md"), fx("normal-card.md")]);
   expect(next.map((t) => t.title)).toEqual(["no-h1", "Normal Card"]);
 });

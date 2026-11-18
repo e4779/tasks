@@ -1,9 +1,5 @@
 import type { Graph } from "./graph";
 
-// priority is compared as a plain string (lexical), then path breaks ties
-const sortKey = (n: { attrs: Record<string, unknown>; path: string }): string =>
-  `${String(n.attrs.priority ?? "")}\t${n.path}`;
-
 // hard-blocked = any hard edge to a target that is not done/cancelled (ghosts included);
 // shared by nextUp and the web snapshot
 export const hardBlocked = (graph: Graph): ReadonlySet<string> => {
@@ -22,6 +18,6 @@ export const nextUp = (graph: Graph): Readonly<{ title: string; path: string }>[
   const blocked = hardBlocked(graph);
   return graph.nodes
     .filter((n) => (n.status === "pending" || n.status === "in-progress") && !blocked.has(n.path))
-    .sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
     .map((n) => ({ title: n.title, path: n.path }));
 };

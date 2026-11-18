@@ -10,7 +10,6 @@ export type SnapshotNode = Readonly<{
   path: string;
   title: string;
   status: string | null;
-  priority: string | null;
   blocked: boolean;
   ghost: boolean;
 }>;
@@ -26,7 +25,6 @@ export const snapshot = (graph: Graph): Snapshot => {
       path: n.path,
       title: n.title,
       status: n.status,
-      priority: typeof n.attrs.priority === "string" ? n.attrs.priority : null,
       blocked: blocked.has(n.path),
       ghost: graph.ghosts.includes(n.path),
     })),

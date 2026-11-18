@@ -6,7 +6,6 @@ import "./doc.js";
 
 const CHIPS = ["pending", "in-progress", "done", "cancelled", "blocked"];
 const TABS = { "#/list": "tsk-list", "#/next": "tsk-next", "#/graph": "tsk-graph" };
-const key = (n) => `${n.priority ?? ""}\t${n.path}`; // same lexical order as next.ts
 
 class TskApp extends HTMLElement {
   connectedCallback() {
@@ -85,7 +84,7 @@ class TskApp extends HTMLElement {
       "#/next": () => ({
         nodes: snap.nodes
           .filter((n) => isNext(n) && match(n))
-          .sort((a, b) => (key(a) < key(b) ? -1 : 1)),
+          .sort((a, b) => (a.path < b.path ? -1 : 1)), // path order, same as next.ts
       }),
       "#/graph": () => {
         const nodes = snap.nodes.filter(visible);
