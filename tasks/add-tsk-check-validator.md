@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Add `tsk check` — corpus validator
@@ -61,3 +61,7 @@ format (CI-able, pre-commit-able).
   Note the root semantics: discovery takes SEARCH roots (the `tasks/` dir must
   live inside them), so `check tasks` sees an empty corpus — a vacuous pass,
   never a gate.
+
+## Resolution
+
+Implemented in 81a80df: ERROR only machine-of-format; semantic warns (unknown status, ghost/non-task blocker, broken/self link, cycles reported, non-kebab, dead-weight cancelled-blocker). First live run surfaced 5 real dead deps across corpora.

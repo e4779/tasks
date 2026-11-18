@@ -57,12 +57,25 @@
       tsk-graph .card text { fill: var(--text-1); font: 12px system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
       tsk-doc .back { display: inline-block; padding: var(--size-3) 0; color: var(--text-2); text-decoration: none; }
       tsk-doc pre { white-space: pre-wrap; background: var(--surface-1); border: 1px solid var(--surface-3); border-radius: 8px; padding: var(--size-3); box-shadow: var(--shadow-2); }
+      tsk-doc .md h1, tsk-doc .md h2, tsk-doc .md h3 { color: var(--text-1); margin: var(--size-4) 0 var(--size-2); line-height: 1.25; }
+      tsk-doc .md h1 { font-size: 1.4rem; }
+      tsk-doc .md h2 { font-size: 1.25rem; }
+      tsk-doc .md h3 { font-size: 1.1rem; }
+      tsk-doc .md p { margin: var(--size-2) 0; }
+      tsk-doc .md ul, tsk-doc .md ol { margin: var(--size-2) 0; padding-left: var(--size-5); }
+      tsk-doc .md li { margin: var(--size-1) 0; }
+      tsk-doc .md li > input[type="checkbox"] { margin-right: var(--size-2); accent-color: var(--blue-6); }
+      tsk-doc .md a { color: var(--blue-4); }
+      tsk-doc .md :not(pre) > code { background: var(--surface-2); border-radius: 4px; padding: 0 .3em; font-family: ui-monospace, monospace; font-size: .9em; }
+      tsk-doc details { margin-top: var(--size-5); }
+      tsk-doc summary { cursor: pointer; color: var(--text-2); padding: var(--size-2) 0; }
     </style>
   </head>
   <body>
     <tsk-app></tsk-app>
     <script src="/vendor/d3.min.js"></script>
     <script src="/vendor/elk.bundled.js"></script>
+    <script src="/vendor/markdown-it.umd.min.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

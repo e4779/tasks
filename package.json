@@ -13,6 +13,7 @@
     "d3": "7",
     "elkjs": "^0.12.1",
     "gray-matter": "^4.0.3",
+    "markdown-it": "^15.0.3",
     "open-props": "^1.7.23",
     "tinyglobby": "^0.2.17"
   },

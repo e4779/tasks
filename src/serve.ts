@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, resolve, sep } from "node:path";
+import matter from "gray-matter";
 import { DEFAULT_TERMINALS, loadConfig, terminalsOf } from "./config";
 import { discover } from "./discover";
 import type { Graph } from "./graph";
@@ -42,6 +43,7 @@ const webRoot = resolve(import.meta.dir, "..", "web");
 const VENDOR = {
   "d3.min.js": "d3/dist/d3.min.js",
   "elk.bundled.js": "elkjs/lib/elk.bundled.js",
+  "markdown-it.umd.min.js": "markdown-it/dist/browser/markdown-it.umd.min.js",
   "normalize.min.css": "open-props/normalize.min.css",
   "theme.dark.switch.min.css": "open-props/theme.dark.switch.min.css",
   "sizes.min.css": "open-props/sizes.min.css",
@@ -86,10 +88,15 @@ export const startServer = (roots: string[], port: number, host = "127.0.0.1") =
         const files = await discover(roots.length > 0 ? roots : ["."]);
         if (!files.includes(p)) return new Response("not found", { status: 404 });
         const r = parseFile(p, roots);
+        const source = readFileSync(p, "utf8");
+        // same gray-matter split parse.ts runs, so client and parser agree on the body;
+        // first ^# line dropped server-side — it is the very line parse.ts shows as title
+        const body = matter(source).content.replace(/^# .+\n?/m, "");
         return Response.json({
           path: p,
           title: r.ok ? r.v.title : basename(p, ".md"),
-          source: readFileSync(p, "utf8"),
+          source,
+          body,
         });
       }
       if (pathname.startsWith("/vendor/")) {

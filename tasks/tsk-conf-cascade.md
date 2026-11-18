@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # `.tsk.conf` config cascade (INI, per-directory override)
@@ -218,3 +218,7 @@ status ∉ terminals):
 - Code (status keys): `src/parse.ts` (`KNOWN_STATUS`, the `completed`
   ternary, `unknown status` warnings), `src/next.ts` (`hardBlocked` with
   hardcoded terminals, "ghosts included").
+
+## Resolution
+
+Implemented in 4e31dd7: src/config.ts INI cascade (89 lines), wired discover/parse/next/serve; 10 tests; zero-config byte-identical A/B. bin terminals threading landed with 81a80df.

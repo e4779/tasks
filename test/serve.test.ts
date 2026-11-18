@@ -63,6 +63,16 @@ test("vendor: open-props css subsets are served; unknown vendor paths stay 404",
   expect((await fetch(`${base}/vendor/..%2Fpackage.json`)).status).toBe(404);
 });
 
+test("vendor: markdown-it UMD bundle is served (doc renderer)", async () => {
+  const r = await fetch(`${base}/vendor/markdown-it.umd.min.js`);
+  expect(r.status).toBe(200);
+  expect(r.headers.get("content-type")).toContain("javascript");
+  const body = await r.text();
+  expect(body).toContain("markdownit"); // the real UMD bundle (global markdownit)
+  expect(body.length).toBeGreaterThan(50_000); // ~100 KB minified
+  expect((await fetch(`${base}/vendor/markdown-it.js`)).status).toBe(404);
+});
+
 test("favicon.ico gets a real response, not a 404", async () => {
   const r = await fetch(`${base}/favicon.ico`);
   expect(r.status).toBe(204);
@@ -76,6 +86,19 @@ test("api/doc: corpus member returns {path,title,source}; everything else is 404
   expect(doc.path).toBe(p);
   expect(doc.title.length).toBeGreaterThan(0);
   expect(doc.source).toContain("status:"); // raw markdown, frontmatter included
+});
+
+test("api/doc body: server-side split — frontmatter and title h1 gone, fallback cards keep whole body", async () => {
+  const get = async (suffix: string) =>
+    await (
+      await fetch(`${base}/api/doc?path=${encodeURIComponent(by(suffix)?.path ?? "")}`)
+    ).json();
+  const doc = await get("normal-card.md");
+  expect(doc.body).not.toContain("status:"); // frontmatter stripped
+  expect(doc.body).not.toContain("# Normal Card"); // the h1 IS the h2 title, never duplicated
+  expect(doc.body).toContain("[cyclic-a](./cyclic-a.md)"); // md links verbatim for the client
+  expect(doc.body).toContain("[[completed-card]]"); // wikilink preprocessing stays client-side
+  expect(await (await get("no-h1.md")).body).toContain("Body only."); // no h1 → whole body
 });
 
 test("api/doc trust boundary: non-corpus and empty paths never reach the fs", async () => {

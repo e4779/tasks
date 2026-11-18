@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Rectpack edgeless corpora (ELK algorithm switch)
@@ -59,3 +59,7 @@ the algorithm at layout-input build time.
 - Code: `web/elk-adapter.js` (`layoutOptions` block), `web/graph.js`
   (`elk.layout` call, edge merge), `tools/probe.mjs` (ac9 + DEFAULT_EVAL
   payload semantics), elkjs vendored via `src/serve.ts` VENDOR map.
+
+## Resolution
+
+Implemented in 532a88c: empty merged edges -> org.eclipse.elk.rectpacking (all-lowercase id — card casing was a typo); elk overshoots asked aspect 1.2-1.7x so we ask aspect/1.5 (shortcut noted); targetWidth dead end recorded. Both corpora green at 1920x1080.

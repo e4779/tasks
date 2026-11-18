@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Render the doc view body as markdown → HTML
@@ -122,3 +122,7 @@ blob, no doubled title).
   gate — cf. [fix-svg-title-truncation](./fix-svg-title-truncation.md)
   for the probe-as-evidence pattern); AC8 hex gate lives in
   `test/web-tokens.test.ts`.
+
+## Resolution
+
+Implemented (commit follows): markdown-it 15.0.3 vendored UMD (dist/browser/), html:false + DOM scrub + href allowlist; server-side body split mirrors parse regex; wikilinks preprocessed; static checkboxes; raw behind details. Security probed with evil corpus: 0 live vectors.

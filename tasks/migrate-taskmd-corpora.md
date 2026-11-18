@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Migrate taskmd corpora to tsk (one-time conversion)
@@ -146,3 +146,7 @@ the vehicle is not.
   `src/graph.ts` (`hardTargets` — blocked-by paths only),
   `bin/tsk.ts` (command switch), discovery pattern
   `**/{tasks,todos}/**/*.md`.
+
+## Resolution
+
+Executed in ec97694: 120 cards (80 homelab + 40 bcf) frontmatter-converted, bodies byte-identical; homelab graph 0 -> 36 edges (AC met); idempotent rerun zero-diff. Foreign repos left uncommitted for operator review; bcf .tsk.conf added by parent.
