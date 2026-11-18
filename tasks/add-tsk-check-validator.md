@@ -56,8 +56,8 @@ format (CI-able, pre-commit-able).
   KNOWN_STATUS), `src/graph.ts` (ghosts, cycles), fixtures in
   `test/fixtures/tasks/`.
 - Soft edge: check output is only as clean as discovery allows — meta-file
-  exclusion is separate and independent:
-  [exclude-meta-files-from-discovery](./exclude-meta-files-from-discovery.md).
+  exclusion is config-owned (`discover` negations, folded into
+  [tsk-conf-cascade](./tsk-conf-cascade.md) by ruling «glob, и только glob»).
   Note the root semantics: discovery takes SEARCH roots (the `tasks/` dir must
   live inside them), so `check tasks` sees an empty corpus — a vacuous pass,
   never a gate.
