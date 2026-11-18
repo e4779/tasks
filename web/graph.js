@@ -1,27 +1,39 @@
-// UMD global from /vendor/force-graph.min.js — dist .mjs has bare imports, unusable without a build step
-import { bboxOf, fitStretch } from "./camera.js";
+// UMD globals from /vendor/d3.min.js + /vendor/elk.bundled.js — global d3,
+// one file, no module graph
+import { cardSize, intersect, pointOnRect } from "./cards.js";
+import { mergeEdges } from "./edges.js";
+import { buildElkGraph, edgeId, mapLayout, polyToD } from "./elk-adapter.js";
 import { breakCycles } from "./graph-cycles.js";
 
-const { ForceGraph } = globalThis;
+const { d3, ELK } = globalThis;
 
-const STATUS_COLOR = {
-  pending: "#e0af68",
-  "in-progress": "#7aa2f7",
-  done: "#9ece6a",
-  cancelled: "#f7768e",
-};
 const trunc = (s, max = 22) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 const dim = (n) => n.status === "done" || n.status === "cancelled";
 
+const BAR = 4; // status colour bar, left inside the rect
+const PAD = 2; // viewBox pad — slim: ac2 measures centre spread against the view, every pad px eats cover
+const SVG_NS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs = {}) => {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
+
+// probe/test hook: --ac validates geometry through the same pure fns the
+// renderer could use — no duplicated rect math in the probe
+globalThis.tskCards = { intersect, pointOnRect };
+
+let elk; // one ELK per page; its worker serializes the layouts
+let mctx; // measure context for cardSize
+
 class TskGraph extends HTMLElement {
-  // update() runs while the element is still detached (app.js builds views
-  // before inserting them) — clientWidth would be 0, so painting waits for
-  // connectedCallback where layout is real
+  gen = 0; // filters can re-enter paint() while ELK runs; last call wins
+
   connectedCallback() {
     this.resizeObserver?.disconnect();
-    this.resizeObserver = new ResizeObserver(() =>
-      this.fg?.width(this.clientWidth || 800).height(this.clientHeight || 500),
-    );
+    // svg attrs track the container, so the viewBox meet-fit keeps mapping
+    // elk space onto exactly 100% of the element on every resize (AC1)
+    this.resizeObserver = new ResizeObserver(() => this.sizeSvg());
     this.resizeObserver.observe(this);
     if (this.data) this.paint();
   }
@@ -30,12 +42,18 @@ class TskGraph extends HTMLElement {
     this.resizeObserver?.disconnect();
   }
 
+  sizeSvg() {
+    const svg = this.querySelector("svg");
+    if (svg) {
+      svg.setAttribute("width", this.clientWidth || 800);
+      svg.setAttribute("height", this.clientHeight || 500);
+    }
+  }
+
   update({ nodes, edges }) {
+    this.gen++; // invalidate any in-flight layout: its graph is gone
     if (nodes.length === 0) {
-      this.fg?.pauseAnimation();
-      this.fg = null;
       this.data = null;
-      this.cycleLinks = [];
       this.replaceChildren(document.createTextNode("no matching tasks"));
       return;
     }
@@ -43,101 +61,95 @@ class TskGraph extends HTMLElement {
     if (this.isConnected) this.paint();
   }
 
-  buildFg() {
-    const fg = ForceGraph()(this)
-      .width(this.clientWidth || 800)
-      .height(this.clientHeight || 500)
-      .dagMode("td")
-      .dagLevelDistance(80)
-      // wall-clock cooldown: engineStop lands at a frame-rate-independent
-      // moment, so the fit (and the probe) is not at the mercy of RAF pacing
-      .cooldownTime(3000)
-      .nodeRelSize(5)
-      .linkWidth(1.5)
-      .linkColor((l) => (l.kind === "hard" ? "#7aa2f7" : "#565f89"))
-      .linkLineDash((l) => (l.kind === "soft" ? [5, 4] : []))
-      .nodeLabel((n) => n.id)
-      .onNodeClick((n) => {
-        location.hash = `#/doc?path=${encodeURIComponent(n.id)}`;
-      })
-      // eager zoomToFit reads pre-tick positions (x/y undefined) and leaves a
-      // NaN camera transform — dead wheel, nodes collapsed to a corner; fit
-      // only once per data load, after the engine settles
-      .onEngineStop(() => {
-        if (!this.needsFit) return;
-        this.needsFit = false;
-        const nodes = fg.graphData().nodes;
-        const bb = bboxOf(nodes);
-        if (!bb) return; // shortcut: ≤1 positioned node has no spread to fit
-        const { sx, sy } = fitStretch(bb, {
-          w: this.clientWidth || 800,
-          h: this.clientHeight || 500,
-        });
-        const cx = (bb.x0 + bb.x1) / 2;
-        const cy = (bb.y0 + bb.y1) / 2;
-        for (const n of nodes) {
-          if (typeof n.x !== "number" || typeof n.y !== "number") continue;
-          n.x = cx + (n.x - cx) * sx;
-          n.y = cy + (n.y - cy) * sy;
-        }
-        fg.zoomToFit(300, 40);
-      })
-      // broken cycle edges: force-graph's dag pass reads ALL graphData links, so
-      // they cannot be links; drawn per-frame instead — visible, never layered
-      .onRenderFramePost((ctx) => {
-        ctx.setLineDash([2, 4]);
-        ctx.strokeStyle = "#f7768e";
-        ctx.lineWidth = 1.5;
-        for (const l of this.cycleLinks ?? []) {
-          if (typeof l.source?.x !== "number" || typeof l.target?.x !== "number") continue;
-          ctx.beginPath();
-          ctx.moveTo(l.source.x, l.source.y);
-          ctx.lineTo(l.target.x, l.target.y);
-          ctx.stroke();
-        }
-        ctx.setLineDash([]);
-      })
-      // shortcut: canvas labels get cramped beyond ~50 nodes; upgrade to zoom-based label fading
-      .nodeCanvasObject((node, ctx, globalScale) => {
-        const r = 5;
-        ctx.globalAlpha = dim(node) ? 0.35 : 1;
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-        ctx.fillStyle = node.ghost ? "#20232b" : (STATUS_COLOR[node.status] ?? "#565f89");
-        ctx.fill();
-        if (node.ghost) {
-          ctx.setLineDash([3, 3]);
-          ctx.strokeStyle = "#565f89";
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-        ctx.font = `${12 / globalScale}px system-ui, sans-serif`;
-        ctx.fillStyle = "#c0caf5";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-        ctx.fillText(trunc(node.title), node.x, node.y - r - 2);
-        ctx.globalAlpha = 1;
-      });
-    return fg;
+  // one svg per element for its lifetime; filters re-render only the world
+  // group, so the zoom transform (svg.__zoom) survives filtering
+  ensureSvg() {
+    const existing = this.querySelector("svg");
+    if (existing) return existing;
+    const svg = svgEl("svg", { width: this.clientWidth || 800, height: this.clientHeight || 500 });
+    svg.append(svgEl("g"));
+    svg.addEventListener("click", (e) => {
+      const path = e.target.closest?.(".card")?.dataset.path;
+      if (path) location.hash = `#/doc?path=${encodeURIComponent(path)}`;
+    });
+    d3.select(svg).call(
+      // wheel/pinch/dblclick zoom + drag pan; d3 stores the live transform
+      // on the element itself (svg.__zoom) where the probe reads it
+      d3
+        .zoom()
+        .on("zoom", ({ transform }) => svg.querySelector("g").setAttribute("transform", transform)),
+    );
+    this.replaceChildren(svg);
+    return svg;
   }
 
-  paint() {
-    this.fg ??= this.buildFg();
-    this.fg.width(this.clientWidth || 800).height(this.clientHeight || 500);
+  async paint() {
+    const gen = ++this.gen;
+    const svg = this.ensureSvg();
+    const world = svg.querySelector("g");
+    const w = Number(svg.getAttribute("width")) || 800;
+    const h = Number(svg.getAttribute("height")) || 500;
     const { nodes, edges } = this.data;
     const nodeObjs = nodes.map((n) => ({ ...n, id: n.path }));
     const byPath = new Map(nodeObjs.map((n) => [n.path, n]));
-    // dagMode throws on cycles: layer over the acyclic set; same node objects so
-    // the overlay picks up live x/y as the simulation moves them
-    const { edges: acyclic, broken } = breakCycles(nodes, edges);
-    this.cycleLinks = broken
-      .map((e) => ({ source: byPath.get(e.from), target: byPath.get(e.to) }))
-      .filter((l) => l.source && l.target);
-    const links = acyclic
-      .map((e) => ({ source: byPath.get(e.from), target: byPath.get(e.to), kind: e.kind }))
-      .filter((l) => l.source && l.target);
-    this.needsFit = true;
-    this.fg.graphData({ nodes: nodeObjs, links });
+    const kept = edges.filter((e) => byPath.has(e.from) && byPath.has(e.to));
+    // render-prep only (AC7): merge parallels/mutual pairs — the snapshot
+    // keeps every edge, the canvas draws one line per relation; no 2-cycles
+    // reach elk, so breakCycles only ever handles 3+ cycles (broken style)
+    const merged = mergeEdges(kept);
+    const { broken } = breakCycles(nodes, merged);
+    const brokenIds = new Set(broken.map(edgeId));
+    mctx ??= document.createElement("canvas").getContext("2d");
+    const sizes = new Map(nodeObjs.map((n) => [n.id, cardSize(n.title, mctx)]));
+    elk ??= new ELK();
+    const result = await elk.layout(buildElkGraph(nodeObjs, sizes, merged, w / h));
+    if (gen !== this.gen) return; // stale: a newer paint() owns the graph
+    const { rects, polylines } = mapLayout(result);
+
+    // ONE coordinate world: everything below carries raw elk coords, the
+    // viewBox is the only bridge to screen space — cards and edges cannot
+    // drift apart, so nothing ever trims or reattaches an endpoint
+    const xs = [...rects.values()].flatMap((r) => [r.x, r.x + r.w]);
+    const ys = [...rects.values()].flatMap((r) => [r.y, r.y + r.h]);
+    svg.setAttribute(
+      "viewBox",
+      `${Math.min(...xs) - PAD} ${Math.min(...ys) - PAD} ${Math.max(...xs) - Math.min(...xs) + 2 * PAD} ${
+        Math.max(...ys) - Math.min(...ys) + 2 * PAD
+      }`,
+    );
+    world.replaceChildren();
+    for (const e of merged) {
+      const poly = polylines.get(edgeId(e)) ?? [];
+      if (poly.length < 2) continue; // unrouted edge (e.g. self-loop)
+      world.append(
+        svgEl("path", {
+          d: polyToD(poly),
+          class: `edge ${e.kind}${brokenIds.has(edgeId(e)) ? " broken" : ""}`,
+          "data-from": e.from,
+          "data-to": e.to,
+        }),
+      );
+    }
+    for (const n of nodeObjs) {
+      const r = rects.get(n.id);
+      if (!r) continue;
+      const card = svgEl("g", {
+        class: `card st-${n.status ?? "none"}${n.ghost ? " ghost" : ""}${dim(n) ? " dim" : ""}`,
+        "data-path": n.path,
+        // the elk rect verbatim — the --ac gate reads geometry back from here
+        "data-x": r.x,
+        "data-y": r.y,
+        "data-w": r.w,
+        "data-h": r.h,
+        transform: `translate(${r.x} ${r.y})`,
+      });
+      card.append(svgEl("rect", { class: "box", width: r.w, height: r.h, rx: 4 }));
+      if (!n.ghost) card.append(svgEl("rect", { class: "bar", width: BAR, height: r.h }));
+      const text = svgEl("text", { x: r.w / 2 + BAR / 2, y: r.h / 2 });
+      text.textContent = trunc(n.title);
+      card.append(text);
+      world.append(card);
+    }
   }
 }
 customElements.define("tsk-graph", TskGraph);

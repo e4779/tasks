@@ -36,6 +36,18 @@ export const snapshot = (graph: Graph): Snapshot => {
 
 const webRoot = resolve(import.meta.dir, "..", "web");
 
+// vendor: constant pathname → constant node_modules file, nothing user-controlled to traverse
+const VENDOR = {
+  "d3.min.js": "d3/dist/d3.min.js",
+  "elk.bundled.js": "elkjs/lib/elk.bundled.js",
+  "normalize.min.css": "open-props/normalize.min.css",
+  "theme.dark.switch.min.css": "open-props/theme.dark.switch.min.css",
+  "sizes.min.css": "open-props/sizes.min.css",
+  "colors.min.css": "open-props/colors.min.css",
+  "shadows.min.css": "open-props/shadows.min.css",
+  "easings.min.css": "open-props/easings.min.css",
+} as const;
+
 // trust boundary: serve only files physically under web/ (no traversal, no project files)
 const safeWebFile = (rel: string) => {
   const abs = resolve(webRoot, rel);
@@ -76,12 +88,10 @@ export const startServer = (roots: string[], port: number, host = "127.0.0.1") =
           source: readFileSync(p, "utf8"),
         });
       }
-      // vendor: constant pathname → constant node_modules file, nothing user-controlled to traverse
-      if (pathname === "/vendor/force-graph.min.js") {
-        const f = Bun.file(
-          resolve(import.meta.dir, "..", "node_modules/force-graph/dist/force-graph.min.js"),
-        );
-        return (await f.exists())
+      if (pathname.startsWith("/vendor/")) {
+        const rel = VENDOR[pathname.slice("/vendor/".length) as keyof typeof VENDOR];
+        const f = rel && Bun.file(resolve(import.meta.dir, "..", "node_modules", rel));
+        return f && (await f.exists())
           ? new Response(f, { headers: { "cache-control": "no-store" } })
           : new Response("not found", { status: 404 });
       }

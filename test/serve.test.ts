@@ -40,11 +40,35 @@ const server = startServer([join(import.meta.dir, "fixtures")], 0);
 const base = `http://${server.hostname}:${server.port}`;
 afterAll(() => server.stop(true));
 
-test("vendor: force-graph UMD bundle is served from node_modules", async () => {
-  const r = await fetch(`${base}/vendor/force-graph.min.js`);
+test("vendor: d3 UMD bundle is served from node_modules", async () => {
+  const r = await fetch(`${base}/vendor/d3.min.js`);
   expect(r.status).toBe(200);
   expect(r.headers.get("content-type")).toContain("javascript");
-  expect((await r.text()).slice(0, 40)).toContain("force-graph");
+  const body = await r.text();
+  expect(body.slice(0, 40)).toContain("d3js.org"); // the real UMD bundle header
+  expect(body.length).toBeGreaterThan(200_000); // ~280 KB minified
+  expect((await fetch(`${base}/vendor/force-graph.min.js`)).status).toBe(404); // gone for good
+});
+
+test("vendor: elkjs bundled layout engine is served from node_modules", async () => {
+  const r = await fetch(`${base}/vendor/elk.bundled.js`);
+  expect(r.status).toBe(200);
+  expect(r.headers.get("content-type")).toContain("javascript");
+  const body = await r.text();
+  expect(body).toContain("org.eclipse.elk.layered"); // the layered algorithm is in
+  expect(body.length).toBeGreaterThan(1_000_000); // the real 1.65 MB bundle
+});
+
+test("vendor: open-props css subsets are served; unknown vendor paths stay 404", async () => {
+  for (const f of ["normalize", "theme.dark.switch", "sizes", "colors", "shadows", "easings"]) {
+    const r = await fetch(`${base}/vendor/${f}.min.css`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toContain("css");
+  }
+  const colors = await (await fetch(`${base}/vendor/colors.min.css`)).text();
+  expect(colors).toContain("--orange-6"); // the status ramps the viewer resolves
+  expect((await fetch(`${base}/vendor/nope.css`)).status).toBe(404);
+  expect((await fetch(`${base}/vendor/..%2Fpackage.json`)).status).toBe(404);
 });
 
 test("favicon.ico gets a real response, not a 404", async () => {

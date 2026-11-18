@@ -4,10 +4,10 @@
  */
 
 /**
- * Remove one edge per cycle until the edge set is acyclic — force-graph's
- * dagMode throws on cycles and the layout dies. Deterministic: each cycle's
- * max edge by `${from}\t${to}\t${kind}` is the one broken; the caller renders
- * broken edges separately so cycles stay visible, just excluded from layering.
+ * Find the edges that close cycles — elk layered breaks them internally for
+ * layout but still routes them, so the viewer only needs the set to style:
+ * broken edges render red dotted, cycles stay visible. Deterministic: each
+ * cycle's max edge by `${from}\t${to}\t${kind}` is the one styled broken.
  * @param {Readonly<NodeRef[]>} nodes
  * @param {Readonly<Edge[]>} edges
  * @returns {{ edges: Edge[], broken: Edge[] }}
