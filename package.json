@@ -1,0 +1,22 @@
+{
+  "name": "tsk",
+  "type": "module",
+  "bin": {
+    "tsk": "bin/tsk.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "check:full": "biome check . && tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "force-graph": "^1.52.0",
+    "gray-matter": "^4.0.3",
+    "tinyglobby": "^0.2.17"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2"
+  }
+}

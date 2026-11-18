@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tsk</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: #14161b; color: #d6d9e0; }
+      nav { display: flex; gap: .4rem; padding: .6rem 1rem; border-bottom: 1px solid #262a33; }
+      nav a { color: #9aa3b2; text-decoration: none; padding: .25rem .7rem; border-radius: 6px; }
+      nav a.active { background: #2b3245; color: #fff; }
+      #filters { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; padding: .6rem 1rem; }
+      #q { background: #1d2027; color: inherit; border: 1px solid #333947; border-radius: 6px; padding: .35rem .6rem; min-width: 18rem; }
+      button[data-chip] { background: #1d2027; color: #8b93a3; border: 1px solid #333947; border-radius: 999px; padding: .2rem .7rem; cursor: pointer; }
+      button[data-chip][aria-pressed="true"] { color: #14161b; }
+      button[data-chip="pending"][aria-pressed="true"] { background: #e0af68; border-color: #e0af68; }
+      button[data-chip="in-progress"][aria-pressed="true"] { background: #7aa2f7; border-color: #7aa2f7; }
+      button[data-chip="done"][aria-pressed="true"] { background: #9ece6a; border-color: #9ece6a; }
+      button[data-chip="cancelled"][aria-pressed="true"] { background: #f7768e; border-color: #f7768e; }
+      button[data-chip="blocked"][aria-pressed="true"] { background: #bb9af7; border-color: #bb9af7; }
+      main { padding: 0 1rem 2rem; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid #262a33; }
+      .path { color: #8b93a3; font-family: ui-monospace, monospace; font-size: .85em; word-break: break-all; }
+      .st.pending { color: #e0af68; }
+      .st.in-progress { color: #7aa2f7; }
+      .st.done { color: #9ece6a; }
+      .st.cancelled { color: #f7768e; text-decoration: line-through; }
+      .st.none { color: #565f89; }
+      .next-item { display: flex; gap: 1rem; align-items: baseline; padding: .4rem 0; border-bottom: 1px solid #262a33; }
+      tbody tr { cursor: pointer; }
+      tsk-graph { display: block; height: 70vh; background: #171a21; border: 1px solid #262a33; border-radius: 8px; }
+      tsk-doc .back { display: inline-block; padding: .6rem 0; color: #9aa3b2; text-decoration: none; }
+      tsk-doc pre { white-space: pre-wrap; background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 1rem; }
+    </style>
+  </head>
+  <body>
+    <tsk-app></tsk-app>
+    <script src="/vendor/force-graph.min.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
