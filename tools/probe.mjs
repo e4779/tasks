@@ -39,6 +39,9 @@ export const AC_STATE_EVAL = `(() => {
   if (!svg) return { fatal: 'svg missing' };
   const cards = globalThis.tskCards;
   if (!cards) return { fatal: 'tskCards hook missing' };
+  // AC7/AC10/AC11 zero-links semantics: the raw corpus edge count (pre-filter,
+  // pre-merge) decides whether zero painted links is the contract or a defect
+  const corpusEdges = document.querySelector('tsk-app')?.state?.snap?.edges?.length ?? null;
   // AC9: elk-space card rects as painted (data attrs = mapLayout output)
   const cardEls = [...svg.querySelectorAll('g.card')];
   const rects = cardEls.map((c) => ({
@@ -110,6 +113,7 @@ export const AC_STATE_EVAL = `(() => {
     view: { w: svg.clientWidth, h: svg.clientHeight },
     nodes: pts.length,
     links: edgeEls.length,
+    corpusEdges,
     edgeIssues,
     bbox: pts.length
       ? {
@@ -262,8 +266,13 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
       id: "ac7",
       name: "cycles-visible",
       // merge contract: exactly ONE cycle edge between the pair, ZERO other
-      // edges between them (pre-merge DOM: 2 dotted + 1 solid + 1 dashed = 4)
-      pass: !fatal && !!state && state.cyclePair?.between === 1 && state.cyclePair?.cycleKind === 1,
+      // edges between them (pre-merge DOM: 2 dotted + 1 solid + 1 dashed = 4);
+      // an edgeless corpus has no cycles to show — vacuous pass
+      pass:
+        !fatal &&
+        !!state &&
+        (state.corpusEdges === 0 ||
+          (state.cyclePair?.between === 1 && state.cyclePair?.cycleKind === 1)),
       detail: state ? { cyclePair: state.cyclePair ?? null } : { fatal },
     },
     {
@@ -285,7 +294,9 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
         !fatal &&
         !!state &&
         typeof state.links === "number" &&
-        state.links > 0 &&
+        // edgeless corpus: zero links IS the contract; edges present but
+        // unpainted stays the fail it always was
+        (state.links > 0 || state.corpusEdges === 0) &&
         Array.isArray(state.edgeIssues) &&
         state.edgeIssues.length === 0,
       detail: state
@@ -299,7 +310,7 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
         !fatal &&
         !!state &&
         typeof state.links === "number" &&
-        state.links > 0 &&
+        (state.links > 0 || state.corpusEdges === 0) && // same edgeless rule as ac10
         Array.isArray(state.attachIssues) &&
         state.attachIssues.length === 0,
       detail: state

@@ -58,6 +58,22 @@ describe("buildElkGraph", () => {
     // nodeSize.constraints must stay unset, or ELK would resize the cards
     expect(JSON.stringify(g)).not.toContain("constraints");
   });
+
+  test("80 nodes + 0 edges → rectPacking at the container aspect, layered-only options dropped", () => {
+    const nodes80 = Array.from({ length: 80 }, (_, i) => ({
+      id: `tasks/edgeless-${String(i).padStart(2, "0")}.md`,
+    }));
+    const sizes80 = new Map(nodes80.map((n, i) => [n.id, { w: 48 + i * 1.5, h: 26 }]));
+    const g80 = buildElkGraph(nodes80, sizes80, [], 1562 / 547);
+    expect(g80.children).toHaveLength(80);
+    expect(g80.layoutOptions["elk.algorithm"]).toBe("org.eclipse.elk.rectpacking");
+    expect(g80.layoutOptions["elk.aspectRatio"]).toBe(String(1562 / 547 / 1.5)); // /1.5: rectPacking overshoots the asked aspect — see adapter
+    // nothing to route — edgeRouting/direction/layered spacings are meaningless here
+    expect(g80.layoutOptions["elk.edgeRouting"]).toBeUndefined();
+    expect(g80.layoutOptions["elk.direction"]).toBeUndefined();
+    expect(g80.layoutOptions["elk.spacing.nodeNode"]).toBeUndefined();
+    expect(g80.edges).toEqual([]);
+  });
 });
 
 describe("polyToD", () => {

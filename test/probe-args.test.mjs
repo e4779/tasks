@@ -73,6 +73,7 @@ const healthyState = {
   nodes: 8,
   distinct: 8,
   links: 7,
+  corpusEdges: 12,
   edgeIssues: [],
   bbox: { x0: 300, x1: 1110, y0: 40, y1: 505 },
   outside: [],
@@ -187,8 +188,38 @@ test("acResults: AC10 fails on diagonal segments, empty polylines, or missing pa
   // pre-elk code carries no polyline payload at all — same missing-payload rule as ac9
   const { links: _l, edgeIssues: _e, ...noPoly } = healthyState;
   expect(by(acResults(noPoly, healthyInteract, 204, 0), "ac10")).toBeFalse();
-  // zero links is not a pass: a linked corpus is part of the fixture contract
+  // zero links is not a pass when the corpus carries edges: a linked corpus
+  // is part of the fixture contract
   expect(by(acResults({ ...healthyState, links: 0 }, healthyInteract, 204, 0), "ac10")).toBeFalse();
+});
+
+test("acResults: zero links passes AC7/AC10/AC11 only when the corpus itself is edgeless", () => {
+  const by = (ac, id) => ac.find((r) => r.id === id)?.pass;
+  const edgeless = acResults(
+    {
+      ...healthyState,
+      links: 0,
+      corpusEdges: 0,
+      cyclePair: { between: 0, cycleKind: 0 },
+      attach: [],
+    },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(edgeless, "ac7")).toBeTrue();
+  expect(by(edgeless, "ac10")).toBeTrue();
+  expect(by(edgeless, "ac11")).toBeTrue();
+  // edges exist in the corpus but nothing painted → still the fail it always was
+  const unpainted = acResults(
+    { ...healthyState, links: 0, cyclePair: { between: 0, cycleKind: 0 }, attach: [] },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(unpainted, "ac7")).toBeFalse();
+  expect(by(unpainted, "ac10")).toBeFalse();
+  expect(by(unpainted, "ac11")).toBeFalse();
 });
 
 test("acResults: AC11 fails on floating endpoints with the gap in world px, and on missing payload", () => {
@@ -265,4 +296,5 @@ test("acResults: state eval carries the AC2/AC5/AC9/AC10/AC11 payloads the brows
   expect(AC_STATE_EVAL).toContain("pointOnRect");
   expect(AC_STATE_EVAL).toContain("cycleLinks");
   expect(AC_STATE_EVAL).toContain("cyclePair"); // AC7 merge contract payload
+  expect(AC_STATE_EVAL).toContain("corpusEdges"); // zero-links semantics payload
 });
