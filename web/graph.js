@@ -7,7 +7,6 @@ import { breakCycles } from "./graph-cycles.js";
 
 const { d3, ELK } = globalThis;
 
-const trunc = (s, max = 22) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 const dim = (n) => n.status === "done" || n.status === "cancelled";
 
 const BAR = 4; // status colour bar, left inside the rect
@@ -146,7 +145,9 @@ class TskGraph extends HTMLElement {
       card.append(svgEl("rect", { class: "box", width: r.w, height: r.h, rx: 4 }));
       if (!n.ghost) card.append(svgEl("rect", { class: "bar", width: BAR, height: r.h }));
       const text = svgEl("text", { x: r.w / 2 + BAR / 2, y: r.h / 2 });
-      text.textContent = trunc(n.title);
+      // full title — the rect is sized for it (cardSize measureText + padding);
+      // any future cap must cut by measured width, never char count
+      text.textContent = n.title;
       card.append(text);
       world.append(card);
     }

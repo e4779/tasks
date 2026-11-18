@@ -86,6 +86,7 @@ const healthyState = {
     "normal-card.md→completed-card.md+0/0",
   ],
   attachIssues: [],
+  titleFit: { cards: 8, ellipsis: [], wide: [] },
 };
 const healthyInteract = {
   z0: 1,
@@ -93,11 +94,11 @@ const healthyInteract = {
   z2: 1,
 };
 
-test("acResults: healthy payloads pass AC1-AC3, AC5-AC11; AC4 stays deferred", () => {
+test("acResults: healthy payloads pass AC1-AC3, AC5-AC12; AC4 stays deferred", () => {
   const ac = acResults(healthyState, healthyInteract, 204, 0);
   expect(ac.filter((r) => r.id !== "ac4").every((r) => r.pass === true)).toBeTrue();
   expect(ac.find((r) => r.id === "ac4")?.pass).toBeNull();
-  expect(ac).toHaveLength(11);
+  expect(ac).toHaveLength(12);
 });
 
 test("acResults: overlapping card pairs fail AC9 with the pairs named", () => {
@@ -226,6 +227,33 @@ test("acResults: favicon 404 or console errors fail AC6 only", () => {
   expect(by(acResults(healthyState, healthyInteract, 404, 0), "ac6")).toBeFalse();
   expect(by(acResults(healthyState, healthyInteract, 204, 2), "ac6")).toBeFalse();
   expect(by(acResults(healthyState, healthyInteract, 404, 0), "ac1")).toBeTrue();
+});
+
+test("acResults: AC12 fails on ellipsized titles, rect overflow, or missing payload", () => {
+  const by = (ac, id) => ac.find((r) => r.id === id)?.pass;
+  const ellipsis = acResults(
+    {
+      ...healthyState,
+      titleFit: { cards: 13, ellipsis: ["fix-svg-title-truncation.md"], wide: [] },
+    },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(ellipsis, "ac12")).toBeFalse();
+  expect(ellipsis.find((r) => r.id === "ac12")?.detail.ellipsis).toEqual([
+    "fix-svg-title-truncation.md",
+  ]);
+  const wide = acResults(
+    { ...healthyState, titleFit: { cards: 13, ellipsis: [], wide: ["blocked-card.md+8.5"] } },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(wide, "ac12")).toBeFalse();
+  expect(by(wide, "ac1")).toBeTrue(); // one gate, one defect
+  const { titleFit: _t, ...noFit } = healthyState; // missing payload is a fail, not a pass
+  expect(by(acResults(noFit, healthyInteract, 204, 0), "ac12")).toBeFalse();
 });
 
 test("acResults: state eval carries the AC2/AC5/AC9/AC10/AC11 payloads the browser will produce", () => {

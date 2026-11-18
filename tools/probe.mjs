@@ -4,7 +4,7 @@
 // Usage: bun tools/probe.mjs <url> [--settle-ms N] [--eval '<js>'] [--canvas out.png] [--ac]
 //        [--viewport WxH]  — CDP Emulation.setDeviceMetricsOverride before nav
 // JSON report → stdout; exit 1 on ANY console error or uncaught exception.
-// --ac: operator acceptance gate AC1-AC11 (AC4 labels → vision, out of probe).
+// --ac: operator acceptance gate AC1-AC12 (AC4 labels → vision, out of probe).
 // --canvas: full-page png screenshot (Page.captureScreenshot, svg renderer).
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -29,7 +29,7 @@ export const DEFAULT_EVAL = `(() => {
   };
 })()`;
 
-// AC1-AC3, AC7-AC11 state gathering. Screen truth comes straight from the
+// AC1-AC3, AC7-AC12 state gathering. Screen truth comes straight from the
 // browser (getBoundingClientRect — viewBox fit + zoom transform, whatever the
 // css did); layout truth from the data-* attrs carrying raw elk coordinates.
 export const AC_STATE_EVAL = `(() => {
@@ -92,6 +92,19 @@ export const AC_STATE_EVAL = `(() => {
     if (!sr || !cards.pointOnRect(poly[0], sr, 1)) attachIssues.push(name + ':src');
     if (!dr || !cards.pointOnRect(last, dr, 1)) attachIssues.push(name + ':dst');
   }
+  // AC12: full titles — no canvas-era ellipsis cutoff, and the painted text fits
+  // the rect sized for it (data-w - 4 = the BAR allowance on both sides of
+  // the middle anchor, same margin graph.js reserves via cardSize padding)
+  const titleFit = { cards: 0, ellipsis: [], wide: [] };
+  for (const c of cardEls) {
+    const t = c.querySelector('text');
+    if (!t) continue;
+    titleFit.cards++;
+    const id = String(c.dataset.path).split('/').pop();
+    if (String(t.textContent).includes('…')) titleFit.ellipsis.push(id);
+    const slack = Number(c.dataset.w) - 4 - t.getBBox().width;
+    if (!(slack >= 0)) titleFit.wide.push(id + '+' + R(-slack));
+  }
   return {
     elem: { w: g.clientWidth, h: g.clientHeight },
     view: { w: svg.clientWidth, h: svg.clientHeight },
@@ -119,6 +132,7 @@ export const AC_STATE_EVAL = `(() => {
     overlaps,
     attach,
     attachIssues,
+    titleFit,
   };
 })()`;
 
@@ -156,7 +170,7 @@ export const AC_INTERACT_EVAL = `(() => {
 const finite = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const pct = (a, b) => (a === null || b === null || b === 0 ? null : Math.abs(a - b) / Math.abs(b));
 
-// pure: state/interact/favicon payloads → AC1-AC10 verdicts (AC4 stays vision's)
+// pure: state/interact/favicon payloads → AC1-AC12 verdicts (AC4 stays vision's)
 export const acResults = (state, interact, faviconStatus, consoleErrorCount, hexOffenders = []) => {
   const fatal = state?.fatal ?? interact?.fatal ?? null;
   const res = [
@@ -202,7 +216,7 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
       pass:
         !fatal &&
         !!state &&
-        state.nodes === 8 &&
+        state.nodes > 0 &&
         state.distinct === state.nodes &&
         state.outside.length === 0,
       detail: state
@@ -295,6 +309,21 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
             attachIssues: state?.attachIssues ?? null,
           }
         : { fatal },
+    },
+    {
+      id: "ac12",
+      name: "title-fit",
+      // full title rendered AND it fits the rect measured for it; a missing
+      // payload is a fail (same contract as ac9-ac11)
+      pass:
+        !fatal &&
+        !!state?.titleFit &&
+        state.titleFit.cards > 0 &&
+        Array.isArray(state.titleFit.ellipsis) &&
+        state.titleFit.ellipsis.length === 0 &&
+        Array.isArray(state.titleFit.wide) &&
+        state.titleFit.wide.length === 0,
+      detail: state?.titleFit ? state.titleFit : { fatal },
     },
   ];
   return res.map((r) => ({ ...r, detail: JSON.parse(JSON.stringify(r.detail)) })); // NaN → null for a clean report

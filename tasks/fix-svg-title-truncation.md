@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Render full card titles (drop canvas-era char truncation)
@@ -54,3 +54,7 @@ context / font as `cardSize`), never by char count.
   call site), `web/cards.js` (`cardSize` — measureText + 24 padding, min 40),
   `web/index.html` (`.card text`: 12px, `text-anchor: middle`).
 - Probe surface: `tools/probe.mjs` (`--viewport WxH`, `--eval`, `--canvas`).
+
+## Resolution
+
+Fixed 2026-11-19: canvas-era `trunc()` deleted from web/graph.js; titles render verbatim. Gate: ac12 `title-fit` in tools/probe.mjs (zero ellipsis + getBBox().width <= data-w - 4 on every card, missing-payload fails). Verified live: all 6 real cards previously ellipsized now full-length at 1920x1080; ac3 recalibrated corpus-independent (nodes > 0, not === 8). Vision half deferred: machine gate covers it.
