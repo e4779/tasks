@@ -2,7 +2,7 @@
 status: pending
 ---
 
-# `tskrc` config cascade (INI, per-directory override)
+# `.tsk.conf` config cascade (INI, per-directory override)
 
 ## Objective
 
@@ -11,9 +11,9 @@ Discovery knobs and status handling are all hardcoded today:
 has no exclusion mechanism at all; `src/parse.ts` owns the status vocabulary
 (`KNOWN_STATUS`) and a single baked-in alias (`completed → done`);
 `src/next.ts` owns the terminal set (`!== "done" && !== "cancelled"`).
-Introduce `.tskrc` — an INI-format, zero-dependency config that cascades down
+Introduce `.tsk.conf` — an INI-format, zero-dependency config that cascades down
 the directory chain of each corpus root (editorconfig model):
-`~/.tskrc → ~/projects/.tskrc → <corpus>/.tskrc`. A key redefined in a deeper
+`~/.tsk.conf → ~/projects/.tsk.conf → <corpus>/.tsk.conf`. A key redefined in a deeper
 file overrides; a key absent deeper is inherited from above.
 
 Format decision is RECORDED (operator session 2026-11-18): INI over
@@ -71,20 +71,20 @@ status ∉ terminals):
 - [ ] New `src/config.ts`, pure and fs-thin: `parseIni(text)` (~30 lines:
       `key = value`, `#`/`;` comments, trim, blank-skip, in-file duplicate →
       later wins), `collectRcFiles(root)` (ancestor dirs of the corpus root,
-      filesystem root down to the root itself, shallow→deep; `~/.tskrc` and
-      `~/projects/.tskrc` are just chain members, not special cases),
+      filesystem root down to the root itself, shallow→deep; `~/.tsk.conf` and
+      `~/projects/.tsk.conf` are just chain members, not special cases),
       `loadConfig(roots)` → merged plain object.
 - [ ] Wire into `src/discover.ts`: per-root resolved config supplies the
       pattern when the param is absent; `exclude` filters basenames after
       the glob, before dedupe/sort. Public signature stays backward
-      compatible — with no `.tskrc` anywhere, behavior is byte-identical to
+      compatible — with no `.tsk.conf` anywhere, behavior is byte-identical to
       today (zero-config = zero change).
-- [ ] Three-level fixture `test/fixtures/config/l1/l2/l3/` with `.tskrc` at
+- [ ] Three-level fixture `test/fixtures/config/l1/l2/l3/` with `.tsk.conf` at
       each level (fixtures carry md files too where the pattern needs them).
 - [ ] `test/config.test.ts`: parseIni edge cases (comments, `;`, spaces,
       duplicate key); cascade proves OVERRIDE (key redefined at l3 → l3
       value) and INHERIT (key only at l1 → present in merged l3 view).
-- [ ] Discover integration test: fixture corpus whose `.tskrc` sets a custom
+- [ ] Discover integration test: fixture corpus whose `.tsk.conf` sets a custom
       `discover` pattern (e.g. `**/cards/**/*.md`) and `exclude` — discovered
       set changes accordingly; explicit-pattern call ignores the config key.
 - [ ] `statuses` + `status.aliases` wiring in `src/parse.ts`: `KNOWN_STATUS`
@@ -109,17 +109,17 @@ status ∉ terminals):
 - Three-level fixture test (unit): override AND inherit both proven — the
   cascade is not "deepest file wins wholesale", it is per-key.
 - `exclude` works on the homelab meta files, live: write
-  `~/projects/homelab/.tskrc` with `exclude = AGENTS.md,TASKMD_SPEC.md` →
+  `~/projects/homelab/.tsk.conf` with `exclude = AGENTS.md,TASKMD_SPEC.md` →
   `bun bin/tsk.ts graph ~/projects/homelab` yields exactly **80** nodes.
 - `discover` pattern override live-probed: serve a fixture corpus whose
-  `.tskrc` narrows the pattern, `bun tools/probe.mjs` eval reports the
+  `.tsk.conf` narrows the pattern, `bun tools/probe.mjs` eval reports the
   custom node set (and zero nodes from the default pattern's extra dirs).
 - Zero-config regression: repo's own `bun bin/tsk.ts graph .` unchanged
-  (same node count as before this card) — no `.tskrc` in the chain, no
+  (same node count as before this card) — no `.tsk.conf` in the chain, no
   behavior change. Same for status keys: `next .` output byte-identical
   (defaults reproduce `KNOWN_STATUS` + `completed → done` +
   done/cancelled terminals exactly).
-- Status keys live-probed on a fixture corpus whose `.tskrc` sets all three:
+- Status keys live-probed on a fixture corpus whose `.tsk.conf` sets all three:
   `status.aliases = finished:done` → a `status: finished` card parses as
   `done` (no `unknown status` warning); `statuses` omitting `in-progress` →
   an `in-progress` card warns (and nothing else changes);
