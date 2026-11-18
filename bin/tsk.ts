@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { dirname } from "node:path";
+import { check, type Finding } from "../src/check";
+import { loadConfig, terminalsOf } from "../src/config";
 import { discover } from "../src/discover";
 import { buildGraph } from "../src/graph";
 import { nextUp } from "../src/next";
@@ -22,8 +24,11 @@ switch (cmd) {
       console.log(`${t.path}(${t.status ?? "none"})\t${t.title}\t${t.path}`);
     }
     break;
-  case "next":
-    for (const t of nextUp(buildGraph(await corpus()))) {
+  case "next": // terminals ride the .tsk.conf cascade — the one source for next
+    for (const t of nextUp(
+      buildGraph(await corpus()),
+      terminalsOf(loadConfig(args.length > 0 ? args : ["."])),
+    )) {
       console.log(`${t.title}\t${t.path}`);
     }
     break;
@@ -61,9 +66,19 @@ switch (cmd) {
     startServer(roots, port, host);
     break;
   }
+  case "check": {
+    const findings = await check(args.length > 0 ? args : ["."]);
+    for (const f of findings) console.log(`${f.level}\t${f.path}\t${f.detail}`);
+    const count = (lvl: Finding["level"]) => findings.filter((f) => f.level === lvl).length;
+    console.log(
+      `${findings.length} findings: ${count("ERROR")} errors, ${count("WARN")} warnings, ${count("INFO")} info`,
+    );
+    if (findings.some((f) => f.level === "ERROR")) process.exit(1);
+    break;
+  }
   default:
     console.error(
-      "usage: tsk <list|next|graph|parse|serve> [roots...|file] [--port=N] [--host=<addr>]",
+      "usage: tsk <list|next|graph|parse|serve|check> [roots...|file] [--port=N] [--host=<addr>]",
     );
     process.exit(1);
 }
