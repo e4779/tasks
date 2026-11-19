@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -54,7 +54,21 @@ export const snapshot = (
 
 const webRoot = resolve(import.meta.dirname, "..", "web");
 
-// vendor: constant pathname → constant node_modules file, nothing user-controlled to traverse
+// vendor base: node_modules resolved by WALKING UP from this module's dir
+// (classic node resolution). Repo layout: <root>/node_modules. Global
+// installs hoist deps ABOVE the package (bun: ~/.bun/install/global/
+// node_modules; npm: /usr/lib/node_modules), so a fixed relative hop
+// breaks there — first hit wins, nothing user-controlled in the map.
+const vendorRoot = (() => {
+  let dir = import.meta.dirname;
+  for (;;) {
+    const cand = resolve(dir, "node_modules");
+    if (existsSync(resolve(cand, "d3", "dist", "d3.min.js"))) return cand;
+    const up = dirname(dir);
+    if (up === dir) return resolve(import.meta.dirname, "..", "node_modules");
+    dir = up;
+  }
+})();
 const VENDOR = {
   "d3.min.js": "d3/dist/d3.min.js",
   "normalize.min.css": "open-props/normalize.min.css",
@@ -231,8 +245,7 @@ export const startServer = async (
 
     if (p.startsWith("/vendor/")) {
       const rel = VENDOR[p.slice("/vendor/".length) as keyof typeof VENDOR];
-      const f =
-        rel && (await fileResponse(resolve(import.meta.dirname, "..", "node_modules", rel)));
+      const f = rel && (await fileResponse(resolve(vendorRoot, rel)));
       return f ?? new Response("not found", { status: 404 });
     }
 
