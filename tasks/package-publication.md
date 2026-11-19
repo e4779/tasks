@@ -16,7 +16,7 @@ exists.
 ## Options (evidence attached)
 
 - (a) GIT-ONLY now — RECOMMENDED default. `pi install
-  git:git@github.com:e4779/tsk` (origin is `git@github.com:e4779/tsk.git`;
+  git:git@github.com:e4779/tasks` (origin is `git@github.com:e4779/tasks.git`;
   ssh auth to github.com and gitverse.ru both verified on hlab 2026-11-19).
   Zero publish ceremony; works for personal machines + thinkpad; installers
   need ssh keys.
@@ -26,7 +26,7 @@ exists.
     local-path install and fails. Verified command forms: `pi install
     git:git@github.com:user/repo` or `pi install
     ssh://git@github.com/user/repo` (`pi install --help`, `utils/git.js`).
-- (b) npm `@e4779/tsk` LATER — when the format stabilizes: post
+- (b) npm `@e4779/tasks` LATER — when the format stabilizes: post
   [add-tsk-check-validator](./add-tsk-check-validator.md) (done, 81a80df)
   plus a [render-markdown-doc-view](./render-markdown-doc-view.md) soak,
   README ready for strangers, maybe the repo goes public. Spin a follow-up
@@ -52,7 +52,7 @@ exists.
         [ponytail-user-level](./ponytail-user-level.md) lands the persona —
         declaring the key early must not warn (verify).
 - [ ] Install check: from a scratch directory, with standard ssh keys,
-      `pi install git:git@github.com:e4779/tsk` exits 0; package lands under
+      `pi install git:git@github.com:e4779/tasks` exits 0; package lands under
       `~/.pi/agent/git/`; `settings.json` records the git source; `pi
       config` lists `tsk-workflow` among the package's skills.
 - [ ] Fresh `pi` session (anywhere): the `tsk-workflow` skill surfaces and
@@ -65,7 +65,7 @@ exists.
 - `package.json` parses with the `pi` section above and the agents key is
   `pi.subagents.agents`, NOT `pi.agents` — fails if an unverified key shape
   shipped.
-- From a scratch dir with ssh keys, `pi install git:git@github.com/e4779/tsk`
+- From a scratch dir with ssh keys, `pi install git:git@github.com/e4779/tasks`
   exits 0 and a fresh pi session lists `tsk-workflow` among available
   skills.
 - The decision does NOT close on verifier output alone: Resolution names the
