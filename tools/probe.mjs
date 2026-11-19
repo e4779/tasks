@@ -4,7 +4,7 @@
 // Usage: bun tools/probe.mjs <url> [--settle-ms N] [--eval '<js>'] [--canvas out.png] [--ac]
 //        [--viewport WxH]  — CDP Emulation.setDeviceMetricsOverride before nav
 // JSON report → stdout; exit 1 on ANY console error or uncaught exception.
-// --ac: operator acceptance gate AC1-AC12 (AC4 labels → vision, out of probe).
+// --ac: operator acceptance gate AC1-AC13 (AC4 labels → vision, out of probe).
 // --canvas: full-page png screenshot (Page.captureScreenshot, svg renderer).
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -61,11 +61,16 @@ export const AC_STATE_EVAL = `(() => {
     const b = c.getBoundingClientRect();
     return { id: String(c.dataset.path).split('/').pop(), x: b.x + b.width / 2, y: b.y + b.height / 2 };
   });
-  // AC10/AC11: painted edges ARE the elk polylines — parse the path d back
-  const edgeEls = [...svg.querySelectorAll('path.edge')];
+  // AC10/AC11: painted edges ARE the elk polylines — parse the path d back.
+  // Bundled members paint PIECES (data-from/to kept) plus shared trunks
+  // (path.edge.trunk, no data attrs): geometry gates look at pieces only,
+  // the bus detector below looks at every horizontal on the painted DOM
+  const edgeEls = [...svg.querySelectorAll('path.edge:not(.trunk)')];
   const short = (s) => String(s).split('/').pop();
   // AC7: the cyclic pair must merge to exactly one undirected cycle edge —
-  // count every painted edge between cyclic-a/cyclic-b, either direction
+  // count DISTINCT unordered pairs among cyclic-a/cyclic-b pieces (a bundled
+  // pair paints 2 pieces + its trunk; it must still count between: 1)
+  const pairKey = (el) => [String(el.dataset.from), String(el.dataset.to)].sort().join('⇄');
   const pairEdges = edgeEls.filter((p) => {
     const f = String(p.dataset.from);
     const t = String(p.dataset.to);
@@ -74,8 +79,20 @@ export const AC_STATE_EVAL = `(() => {
       (f.endsWith("cyclic-b.md") && t.endsWith("cyclic-a.md"))
     );
   });
+  const cyclePairCount = (els) => new Set(els.map(pairKey)).size;
   const byPath = new Map(rects.map((r) => [r.path, r]));
   const gap = (p, r) => Math.max(r.x - p.x, p.x - r.x - r.w, r.y - p.y, p.y - r.y - r.h, 0);
+  // AC11 piece semantics: a piece's OUTER endpoint sits 0-gap on its card
+  // rect; its INNER endpoint sits ON a trunk (y at the trunk line, x inside
+  // its span) — no false :src/:dst fails on bundled pieces
+  const trunkSegs = [...svg.querySelectorAll('path.edge.trunk')].flatMap((el) => {
+    const m = [...el.getAttribute('d').matchAll(/[ML](-?[\\d.]+) (-?[\\d.]+)/g)];
+    return m.length === 2
+      ? [{ y: Number(m[0][2]), x0: Math.min(Number(m[0][1]), Number(m[1][1])), x1: Math.max(Number(m[0][1]), Number(m[1][1])) }]
+      : [];
+  });
+  const onTrunk = (pt) =>
+    trunkSegs.some((t) => Math.abs(pt.y - t.y) <= 1 && pt.x >= t.x0 - 1 && pt.x <= t.x1 + 1);
   const edgeIssues = [];
   const attach = [];
   const attachIssues = [];
@@ -92,9 +109,39 @@ export const AC_STATE_EVAL = `(() => {
     const dr = byPath.get(p.dataset.to);
     const last = poly[poly.length - 1];
     attach.push(name + '+' + (sr && dr ? R(gap(poly[0], sr)) + '/' + R(gap(last, dr)) : '?/?'));
-    if (!sr || !cards.pointOnRect(poly[0], sr, 1)) attachIssues.push(name + ':src');
-    if (!dr || !cards.pointOnRect(last, dr, 1)) attachIssues.push(name + ':dst');
+    if (!sr || !(cards.pointOnRect(poly[0], sr, 1) || onTrunk(poly[0]))) attachIssues.push(name + ':src');
+    if (!dr || !(cards.pointOnRect(last, dr, 1) || onTrunk(last))) attachIssues.push(name + ':dst');
   }
+  // AC13 edge buses: every horizontal segment on the painted DOM (pieces,
+  // identity edges, trunks), grouped by y-band ±20 with transitive x-overlap
+  // — a corridor holding >1 segment is an unbundled bus
+  const segs = [];
+  for (const el of svg.querySelectorAll('path.edge')) {
+    const poly = [...el.getAttribute('d').matchAll(/[ML](-?[\\d.]+) (-?[\\d.]+)/g)].map((m) => ({
+      x: Number(m[1]), y: Number(m[2]),
+    }));
+    for (let i = 0; i + 1 < poly.length; i++)
+      if (Math.abs(poly[i].y - poly[i + 1].y) < 1e-9 && Math.abs(poly[i].x - poly[i + 1].x) > 1e-9)
+        segs.push({
+          y: poly[i].y,
+          x0: Math.min(poly[i].x, poly[i + 1].x),
+          x1: Math.max(poly[i].x, poly[i + 1].x),
+        });
+  }
+  const par = segs.map((_, i) => i);
+  const find = (i) => {
+    while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; }
+    return i;
+  };
+  for (let a = 0; a < segs.length; a++)
+    for (let b = a + 1; b < segs.length; b++)
+      if (Math.abs(segs[a].y - segs[b].y) <= 20 && segs[a].x0 < segs[b].x1 && segs[b].x0 < segs[a].x1)
+        par[find(a)] = find(b);
+  const groups = new Map();
+  segs.forEach((s, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), s]));
+  const buses = [...groups.values()]
+    .filter((g) => g.length > 1)
+    .map((g) => g.map((s) => Math.round(s.y) + ':' + Math.round(s.x0) + '→' + Math.round(s.x1)));
   // AC12: full titles — no canvas-era ellipsis cutoff, and the painted text fits
   // the rect sized for it (data-w - 4 = the BAR allowance on both sides of
   // the middle anchor, same margin graph.js reserves via cardSize padding)
@@ -129,13 +176,14 @@ export const AC_STATE_EVAL = `(() => {
       .map((p) => p.id),
     cycleLinks: svg.querySelectorAll('path.edge.broken').length,
     cyclePair: {
-      between: pairEdges.length,
-      cycleKind: pairEdges.filter((p) => p.classList.contains('cycle')).length,
+      between: cyclePairCount(pairEdges),
+      cycleKind: cyclePairCount(pairEdges.filter((p) => p.classList.contains('cycle'))),
     },
     zoom: svg.__zoom ? svg.__zoom.k : null,
     overlaps,
     attach,
     attachIssues,
+    bus: { horizontals: segs.length, corridors: groups.size, buses },
     titleFit,
   };
 })()`;
@@ -174,7 +222,7 @@ export const AC_INTERACT_EVAL = `(() => {
 const finite = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const pct = (a, b) => (a === null || b === null || b === 0 ? null : Math.abs(a - b) / Math.abs(b));
 
-// pure: state/interact/favicon payloads → AC1-AC12 verdicts (AC4 stays vision's)
+// pure: state/interact/favicon payloads → AC1-AC13 verdicts (AC4 stays vision's)
 export const acResults = (state, interact, faviconStatus, consoleErrorCount, hexOffenders = []) => {
   const fatal = state?.fatal ?? interact?.fatal ?? null;
   const res = [
@@ -335,6 +383,20 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
         Array.isArray(state.titleFit.wide) &&
         state.titleFit.wide.length === 0,
       detail: state?.titleFit ? state.titleFit : { fatal },
+    },
+    {
+      id: "ac13",
+      name: "no-buses",
+      // every y-band (±20) with x-overlap holds exactly ONE horizontal: the
+      // shared trunk. Missing payload is a fail, same contract as ac9-ac12;
+      // an edgeless corpus paints no horizontals — vacuous pass
+      pass:
+        !fatal &&
+        !!state?.bus &&
+        Array.isArray(state.bus.buses) &&
+        state.bus.buses.length === 0 &&
+        state.bus.horizontals === state.bus.corridors,
+      detail: state?.bus ?? { fatal },
     },
   ];
   return res.map((r) => ({ ...r, detail: JSON.parse(JSON.stringify(r.detail)) })); // NaN → null for a clean report

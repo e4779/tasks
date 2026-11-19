@@ -1,6 +1,7 @@
 // UMD globals from /vendor/d3.min.js + /vendor/elk.bundled.js — global d3,
 // one file, no module graph
 import { cardSize, intersect, pointOnRect } from "./cards.js";
+import { bundleEdges } from "./edge-bundler.js";
 import { mergeEdges } from "./edges.js";
 import { buildElkGraph, edgeId, mapLayout, polyToD } from "./elk-adapter.js";
 import { breakCycles } from "./graph-cycles.js";
@@ -104,6 +105,11 @@ class TskGraph extends HTMLElement {
     const result = await elk.layout(buildElkGraph(nodeObjs, sizes, merged, w / h));
     if (gen !== this.gen) return; // stale: a newer paint() owns the graph
     const { rects, polylines } = mapLayout(result);
+    // edge buses: parallel horizontal runs merge into shared trunks BEFORE
+    // painting — a bundled member paints pieces (stubs onto the trunk), never
+    // its own horizontal run; groups of 1 are identity, so bus-free corpora
+    // paint exactly what they painted before
+    const { pieces, trunks } = bundleEdges(polylines);
 
     // ONE coordinate world: everything below carries raw elk coords, the
     // viewBox is the only bridge to screen space — cards and edges cannot
@@ -117,17 +123,28 @@ class TskGraph extends HTMLElement {
       }`,
     );
     world.replaceChildren();
-    for (const e of merged) {
-      const poly = polylines.get(edgeId(e)) ?? [];
-      if (poly.length < 2) continue; // unrouted edge (e.g. self-loop)
+    for (const t of trunks)
       world.append(
         svgEl("path", {
-          d: polyToD(poly),
-          class: `edge ${e.kind}${brokenIds.has(edgeId(e)) ? " broken" : ""}`,
-          "data-from": e.from,
-          "data-to": e.to,
+          d: polyToD([
+            { x: t.x0, y: t.y },
+            { x: t.x1, y: t.y },
+          ]),
+          class: "edge trunk",
         }),
       );
+    for (const e of merged) {
+      for (const poly of pieces.get(edgeId(e)) ?? []) {
+        if (poly.length < 2) continue; // unrouted edge (e.g. self-loop)
+        world.append(
+          svgEl("path", {
+            d: polyToD(poly),
+            class: `edge ${e.kind}${brokenIds.has(edgeId(e)) ? " broken" : ""}`,
+            "data-from": e.from,
+            "data-to": e.to,
+          }),
+        );
+      }
     }
     for (const n of nodeObjs) {
       const r = rects.get(n.id);

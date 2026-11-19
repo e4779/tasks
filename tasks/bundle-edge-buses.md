@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Bundle parallel edge tracks into shared trunks (edge buses)
@@ -111,3 +111,7 @@ Unit: bundler contract per tests (a)–(d) above.
   layered graph is post-migration reality; the edgeless-wall world of
   [rectpack-edgeless-corpora](./rectpack-edgeless-corpora.md) is the
   zero-edge branch the bundler never touches.
+
+## Resolution
+
+Implemented: web/edge-bundler.js (union-find band grouping BAND=40, transitive x-overlap, groups>=2 -> trunk at mean-y with vertical stubs, group of 1 = identity zero-drift); ac13 no-buses gate in probe; ac10/11/7 trunk-aware. Live homelab: 10-track ribbon -> 1 trunk + 3 more merges; fixtures byte-identical (A/B). Known non-blockers: ac2 wide-short viewport underuse (pre-existing, corpus aspect), ac7 fixture-scoped by design.

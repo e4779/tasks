@@ -87,6 +87,7 @@ const healthyState = {
     "normal-card.md→completed-card.md+0/0",
   ],
   attachIssues: [],
+  bus: { horizontals: 4, corridors: 4, buses: [] },
   titleFit: { cards: 8, ellipsis: [], wide: [] },
 };
 const healthyInteract = {
@@ -95,11 +96,11 @@ const healthyInteract = {
   z2: 1,
 };
 
-test("acResults: healthy payloads pass AC1-AC3, AC5-AC12; AC4 stays deferred", () => {
+test("acResults: healthy payloads pass AC1-AC3, AC5-AC13; AC4 stays deferred", () => {
   const ac = acResults(healthyState, healthyInteract, 204, 0);
   expect(ac.filter((r) => r.id !== "ac4").every((r) => r.pass === true)).toBeTrue();
   expect(ac.find((r) => r.id === "ac4")?.pass).toBeNull();
-  expect(ac).toHaveLength(12);
+  expect(ac).toHaveLength(13);
 });
 
 test("acResults: overlapping card pairs fail AC9 with the pairs named", () => {
@@ -287,6 +288,34 @@ test("acResults: AC12 fails on ellipsized titles, rect overflow, or missing payl
   expect(by(acResults(noFit, healthyInteract, 204, 0), "ac12")).toBeFalse();
 });
 
+test("acResults: AC13 fails on bus groups (2 horizontals in one band) and on missing payload", () => {
+  const by = (ac, id) => ac.find((r) => r.id === id)?.pass;
+  const bused = acResults(
+    {
+      ...healthyState,
+      bus: { horizontals: 20, corridors: 12, buses: ["692:1956→5622", "692:4341→5760"] },
+    },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(bused, "ac13")).toBeFalse();
+  expect(bused.find((r) => r.id === "ac13")?.detail.buses).toEqual([
+    "692:1956→5622",
+    "692:4341→5760",
+  ]);
+  expect(by(bused, "ac10")).toBeTrue(); // one gate, one defect
+  const { bus: _b, ...noBus } = healthyState; // pre-bus code carries no payload — a fail
+  expect(by(acResults(noBus, healthyInteract, 204, 0), "ac13")).toBeFalse();
+  const split = acResults(
+    { ...healthyState, bus: { horizontals: 3, corridors: 4, buses: [] } }, // count mismatch
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(split, "ac13")).toBeFalse();
+});
+
 test("acResults: state eval carries the AC2/AC5/AC9/AC10/AC11 payloads the browser will produce", () => {
   expect(AC_STATE_EVAL).toContain("getBoundingClientRect"); // browser's own camera math
   expect(AC_STATE_EVAL).toContain("__zoom"); // d3 transform on the element
@@ -297,4 +326,8 @@ test("acResults: state eval carries the AC2/AC5/AC9/AC10/AC11 payloads the brows
   expect(AC_STATE_EVAL).toContain("cycleLinks");
   expect(AC_STATE_EVAL).toContain("cyclePair"); // AC7 merge contract payload
   expect(AC_STATE_EVAL).toContain("corpusEdges"); // zero-links semantics payload
+  expect(AC_STATE_EVAL).toContain("path.edge:not(.trunk)"); // pieces vs trunks split
+  expect(AC_STATE_EVAL).toContain("onTrunk"); // AC11 piece semantics
+  expect(AC_STATE_EVAL).toContain("cyclePairCount"); // AC7 unordered-pair dedupe
+  expect(AC_STATE_EVAL).toContain("buses"); // AC13 bus detector payload
 });

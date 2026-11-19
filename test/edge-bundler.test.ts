@@ -1,0 +1,113 @@
+import { expect, test } from "bun:test";
+import { bundleEdges } from "../web/edge-bundler.js";
+
+type Pt = { x: number; y: number };
+const p = (x: number, y: number): Pt => ({ x, y });
+// V-H-V edge: vertical drop, horizontal run at y, vertical to target
+const vhv = (x0: number, xs: number, xe: number, y: number, y1: number): Pt[] => [
+  p(x0, 100),
+  p(xs, y),
+  p(xe, y),
+  p(xe, y1),
+];
+
+test("(a) three staggered x-overlapping tracks → ONE trunk at mean y, zero member horizontals", () => {
+  const polylines = new Map<string, Pt[]>([
+    ["e1", vhv(100, 100, 500, 672, 900)], // track y=672 x 100→500
+    ["e2", vhv(400, 400, 700, 712, 900)], // track y=712 x 400→700 (40 apart, x-overlap)
+    ["e3", vhv(300, 300, 450, 692, 900)], // track y=692 sits ON the mean
+  ]);
+  const { pieces, trunks } = bundleEdges(polylines);
+  expect(trunks).toEqual([{ y: 692, x0: 100, x1: 700 }]); // mean of 672/692/712, union x
+  // e1: prefix+stub / stub+suffix, collinear bend dropped
+  expect(pieces.get("e1")).toEqual([
+    [p(100, 100), p(100, 692)],
+    [p(500, 692), p(500, 900)],
+  ]);
+  // e3 sits exactly on the trunk: zero-length stubs collapse to the plain sides
+  expect(pieces.get("e3")).toEqual([
+    [p(300, 100), p(300, 692)],
+    [p(450, 692), p(450, 900)],
+  ]);
+  // no bundled member keeps a horizontal run
+  for (const [id, ps] of pieces)
+    for (const poly of ps)
+      for (let i = 0; i + 1 < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[i + 1];
+        if (!a || !b) continue;
+        expect(Math.abs(a.y - b.y), `${id} horizontal at ${i}`).toBeGreaterThan(0);
+      }
+});
+
+test("(b) a lone horizontal run is identity — polyline passes through untouched", () => {
+  const poly = vhv(10, 10, 400, 300, 800);
+  const { pieces, trunks } = bundleEdges(new Map([["solo", poly]]));
+  expect(trunks).toEqual([]);
+  expect(pieces.get("solo")).toEqual([poly]);
+});
+
+test("(c) same band but x-disjoint runs stay identity (no false corridor)", () => {
+  const a = vhv(10, 10, 100, 500, 800);
+  const b = vhv(200, 200, 300, 510, 800);
+  const { pieces, trunks } = bundleEdges(
+    new Map([
+      ["a", a],
+      ["b", b],
+    ]),
+  );
+  expect(trunks).toEqual([]);
+  expect(pieces.get("a")).toEqual([a]);
+  expect(pieces.get("b")).toEqual([b]);
+});
+
+test("(d) deterministic under input permutation", () => {
+  const build = (order: string[]) =>
+    new Map(
+      order.map((id) => [
+        id,
+        id === "e1"
+          ? vhv(100, 100, 500, 672, 900)
+          : id === "e2"
+            ? vhv(400, 400, 700, 712, 900)
+            : vhv(300, 300, 450, 692, 900),
+      ]),
+    );
+  const r1 = bundleEdges(build(["e1", "e2", "e3"]));
+  const r2 = bundleEdges(build(["e3", "e1", "e2"]));
+  expect(JSON.stringify({ t: r2.trunks, p: [...r2.pieces].sort() })).toBe(
+    JSON.stringify({ t: r1.trunks, p: [...r1.pieces].sort() }),
+  );
+  expect(r2.trunks).toEqual([{ y: 692, x0: 100, x1: 700 }]);
+});
+
+test("edge with two bundled runs splits into three pieces (H-V-H through two corridors)", () => {
+  const polylines = new Map<string, Pt[]>([
+    // H-V-H: run1 y=100 x 50→150, vertical, run2 y=300 x 150→250
+    ["s", [p(50, 100), p(150, 100), p(150, 300), p(250, 300)]],
+    ["t1", vhv(0, 60, 140, 110, 700)], // bands with run1 (Δ10, x-overlap)
+    ["t2", vhv(0, 160, 240, 310, 700)], // bands with run2
+  ]);
+  const { pieces, trunks } = bundleEdges(polylines);
+  expect(trunks).toEqual([
+    { y: 105, x0: 50, x1: 150 },
+    { y: 305, x0: 150, x1: 250 },
+  ]);
+  expect(pieces.get("s")).toEqual([
+    [p(50, 100), p(50, 105)],
+    [p(150, 105), p(150, 305)],
+    [p(250, 305), p(250, 300)],
+  ]);
+});
+
+test("empty and degenerate polylines survive (unrouted/self-loop edges)", () => {
+  const { pieces, trunks } = bundleEdges(
+    new Map([
+      ["void", []],
+      ["dot", [p(1, 1)]],
+    ]),
+  );
+  expect(trunks).toEqual([]);
+  expect(pieces.get("void")).toEqual([[]]);
+  expect(pieces.get("dot")).toEqual([[p(1, 1)]]);
+});
