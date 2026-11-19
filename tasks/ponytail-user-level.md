@@ -4,6 +4,15 @@ status: done
 
 # Move ponytail-developer to package agents/ (user-level)
 
+> **AMENDED 2026-11-19, operator ruling (overrides scope (a) below):** the
+> persona lives DIRECTLY in `~/.pi/agent/agents/worker-ponytail.md`, next to
+> `worker.md` — NOT in the tsk package's `agents/` dir. It is operator
+> tooling, not tsk cargo: it must survive tsk uninstall and work where tsk
+> is not installed. The tsk package ships only the `tsk-workflow` skill
+> (see package-publication amendment). Landed accordingly: moved to `~/`,
+> package.json carries skills only, smoke delegation passed from the
+> user-level location.
+
 ## Objective
 
 The ponytail persona stops being a tsk project-local agent and becomes

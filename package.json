@@ -7,12 +7,7 @@
   "pi": {
     "skills": [
       "./skills/tsk-workflow"
-    ],
-    "subagents": {
-      "agents": [
-        "./agents"
-      ]
-    }
+    ]
   },
   "scripts": {
     "check": "tsc --noEmit",

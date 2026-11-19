@@ -38,33 +38,29 @@ exists.
       loop: cards live in `**/{tasks,todos}/**/*.md`, path = identity,
       status-only lifecycle; `bun bin/tsk.ts list|next|graph|check`; `check`
       gates (any ERROR = exit 1). No skills dir exists in the repo today.
-- [ ] `package.json` gains the `pi` section with VERIFIED keys:
-      `"pi": { "skills": ["./skills/tsk-workflow"], "subagents": { "agents":
-      ["./agents"] } }`.
-      - pi core manifest fields are ONLY `extensions|skills|prompts|themes`
-        (`dist/core/pi-manifest.js`, `RESOURCE_FIELDS`) — a `pi.agents` key
-        would be silently ignored.
-      - pi-subagents reads package agent dirs from `pkg.pi.subagents.agents`
-        or top-level `pkg["pi-subagents"].agents`
-        (`pi-subagents/src/agents/agents.js:272–283`; docs/agents.md:32).
-        Package agents load above builtins, below user/project agents.
-      - `agents/` stays empty until
-        [ponytail-user-level](./ponytail-user-level.md) lands the persona —
-        declaring the key early must not warn (verify).
+- [ ] `package.json` gains the `pi` section, skills only:
+      `"pi": { "skills": ["./skills/tsk-workflow"] }`.
+      AMENDED 2026-11-19 (operator): NO `subagents` key and NO `agents/`
+      dir — worker-ponytail is operator tooling and lives directly in
+      `~/.pi/agent/agents/` (dot-pi-synced), not in this package. The pi
+      core manifest fields are ONLY `extensions|skills|prompts|themes`
+      (`dist/core/pi-manifest.js`, `RESOURCE_FIELDS`) — a `pi.agents` key
+      would be silently ignored; subagent packaging mechanics
+      (`pkg.pi.subagents.agents`, pi-subagents `agents.js:272–283`) stay
+      documented here as research, unused.
 - [ ] Install check: from a scratch directory, with standard ssh keys,
       `pi install git:git@github.com:e4779/tasks` exits 0; package lands under
       `~/.pi/agent/git/`; `settings.json` records the git source; `pi
       config` lists `tsk-workflow` among the package's skills.
-- [ ] Fresh `pi` session (anywhere): the `tsk-workflow` skill surfaces and
-      no warnings fire about the empty `agents/` dir.
+- [ ] Fresh `pi` session (anywhere): the `tsk-workflow` skill surfaces.
 - [ ] Record the decision in Resolution: operator confirms git-only or
       overturns toward npm-now.
 
 ## Acceptance criteria
 
-- `package.json` parses with the `pi` section above and the agents key is
-  `pi.subagents.agents`, NOT `pi.agents` — fails if an unverified key shape
-  shipped.
+- `package.json` parses with the `pi` section, skills only — NO
+  `subagents` key (worker-ponytail is not package cargo; it lives in
+  `~/.pi/agent/agents/` per the checklist amendment).
 - From a scratch dir with ssh keys, `pi install git:git@github.com/e4779/tasks`
   exits 0 and a fresh pi session lists `tsk-workflow` among available
   skills.
