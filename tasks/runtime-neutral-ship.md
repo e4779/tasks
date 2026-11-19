@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Runtime-neutral ship — node-compatible CLI and server, bun stays the dev runtime

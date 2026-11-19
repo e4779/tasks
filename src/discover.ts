@@ -1,5 +1,5 @@
 import { glob } from "tinyglobby";
-import { DEFAULT_DISCOVER, loadConfig, splitList } from "./config";
+import { DEFAULT_DISCOVER, loadConfig, splitList } from "./config.ts";
 
 // Path = identity: a task is any md file matching the discover patterns.
 // A .tsk.conf discover list (micromatch `!` negations included, applied by

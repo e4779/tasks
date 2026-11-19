@@ -17,3 +17,15 @@ Tsk - Не таск-менеджер
 Надо проще. В основе всего -
 спецификация документа. Хорошо
 оформленный документ - уже задача.
+
+## Использование
+
+```sh
+node bin/tsk.ts list .     # все карточки: путь(статус), заголовок
+node bin/tsk.ts next .     # что можно брать сейчас
+node bin/tsk.ts check .    # гейт: ERROR = exit 1
+node bin/tsk.ts serve test/fixtures --port 8931
+```
+
+CLI работает под node ≥ 23.6 (нативный type-stripping) и под bun одинаково;
+bun — путь разработки (тесты, гейты `bun run check:full`).

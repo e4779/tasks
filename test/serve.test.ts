@@ -29,7 +29,7 @@ test("snapshot flags ghosts, blocked cards; ghost hard edge survives", () => {
   expect(snap.edges.some((e) => e.kind === "hard" && e.to.endsWith("missing-dep.md"))).toBeTrue();
 });
 
-const server = startServer([FX], 0);
+const server = await startServer([FX], 0);
 const base = `http://${server.hostname}:${server.port}`;
 const get = (p: string) => fetch(`${base}${p}`);
 afterAll(() => server.stop(true));

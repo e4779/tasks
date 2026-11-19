@@ -4,14 +4,14 @@
 // straight from the served HTML (curl level, no CDP).
 
 import ELK from "elkjs";
-import { cardSize, serverCtx } from "./cards";
-import { packComponents } from "./components";
-import { bundleEdges } from "./edge-bundler";
-import { mergeEdges } from "./edges";
-import { buildElkGraph, edgeId, mapLayout, polyToD } from "./elk-adapter";
-import { breakCycles } from "./graph-cycles";
-import { esc } from "./render";
-import type { Snapshot, SnapshotNode } from "./serve";
+import { cardSize, serverCtx } from "./cards.ts";
+import { packComponents } from "./components.ts";
+import { bundleEdges } from "./edge-bundler.ts";
+import { mergeEdges } from "./edges.ts";
+import { buildElkGraph, edgeId, mapLayout, polyToD } from "./elk-adapter.ts";
+import { breakCycles } from "./graph-cycles.ts";
+import { esc } from "./render.ts";
+import type { Snapshot, SnapshotNode } from "./serve.ts";
 
 // fixed layout aspect: elk only takes a ratio, and the server has no viewport.
 // disco overshoots the ask ~×1.15 (ask 1.9 → real ≈2.2 measured on homelab), so

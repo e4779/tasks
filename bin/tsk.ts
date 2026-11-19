@@ -1,14 +1,14 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { dirname } from "node:path";
-import { check, type Finding } from "../src/check";
-import { loadConfig, terminalsOf } from "../src/config";
-import { discover } from "../src/discover";
-import { buildGraph } from "../src/graph";
-import { nextUp } from "../src/next";
-import { parseFile } from "../src/parse";
-import { startServer } from "../src/serve";
+import { check, type Finding } from "../src/check.ts";
+import { loadConfig, terminalsOf } from "../src/config.ts";
+import { discover } from "../src/discover.ts";
+import { buildGraph } from "../src/graph.ts";
+import { nextUp } from "../src/next.ts";
+import { parseFile } from "../src/parse.ts";
+import { startServer } from "../src/serve.ts";
 
-const [cmd, ...args] = Bun.argv.slice(2);
+const [cmd, ...args] = process.argv.slice(2);
 
 const corpus = async () => {
   const files = await discover(args.length > 0 ? args : ["."]);

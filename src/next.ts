@@ -1,5 +1,5 @@
-import { DEFAULT_TERMINALS } from "./config";
-import type { Graph } from "./graph";
+import { DEFAULT_TERMINALS } from "./config.ts";
+import type { Graph } from "./graph.ts";
 
 // blocked = a hard edge to a target whose status is not terminal (ghosts included);
 // terminals come from status.terminals — the one source for next, snapshot, future dimming

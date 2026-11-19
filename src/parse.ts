@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import matter from "gray-matter";
-import { aliasMap, loadConfig, statusesOf, type TskConf } from "./config";
+import { aliasMap, loadConfig, statusesOf, type TskConf } from "./config.ts";
 
 export type Link = Readonly<{ raw: string; resolved: string }>;
 export type ParsedTask = Readonly<{

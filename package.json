@@ -4,6 +4,14 @@
   "bin": {
     "tsk": "bin/tsk.ts"
   },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "skills",
+    "README.md",
+    "package.json"
+  ],
   "pi": {
     "skills": [
       "./skills/tsk-workflow"

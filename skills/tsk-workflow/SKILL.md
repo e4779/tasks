@@ -6,7 +6,8 @@ description: "Work loop for tsk: markdown-file-per-task discipline plus the list
 # tsk workflow
 
 A document IS a task: plain markdown under `**/{tasks,todos}/**/*.md`; nothing else
-exists. Run the CLI from the tsk checkout (`bun bin/tsk.ts …`).
+exists. Run the CLI from the tsk checkout (`node bin/tsk.ts …`, node ≥ 23.6; or the
+installed `tsk`). bun is the dev runtime (tests/gates) and runs the same CLI.
 
 ## Model (fixed — do not re-decide)
 
@@ -22,10 +23,10 @@ exists. Run the CLI from the tsk checkout (`bun bin/tsk.ts …`).
 ## Loop
 
 ```sh
-bun bin/tsk.ts list    # every card: path(status), title
-bun bin/tsk.ts next    # actionable now (graph + terminals)
-bun bin/tsk.ts graph   # full dependency graph as JSON
-bun bin/tsk.ts check   # gate: any ERROR = exit 1
+node bin/tsk.ts list    # every card: path(status), title
+node bin/tsk.ts next    # actionable now (graph + terminals)
+node bin/tsk.ts graph   # full dependency graph as JSON
+node bin/tsk.ts check   # gate: any ERROR = exit 1
 ```
 
 - Pick up: `next`, set `status: in-progress` in frontmatter.
@@ -33,4 +34,4 @@ bun bin/tsk.ts check   # gate: any ERROR = exit 1
   delete or archive cards.
 - Before reporting done: `check` exits 0. ERROR is a hard stop; WARN/INFO are
   judgement calls.
-- Every command accepts roots: `bun bin/tsk.ts check tasks/`.
+- Every command accepts roots: `node bin/tsk.ts check tasks/`.

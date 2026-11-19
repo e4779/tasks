@@ -1,5 +1,5 @@
 import { basename, dirname, resolve } from "node:path";
-import type { ParsedTask } from "./parse";
+import type { ParsedTask } from "./parse.ts";
 
 export type TaskNode = Readonly<{
   path: string;

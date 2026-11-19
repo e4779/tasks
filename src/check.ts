@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { loadConfig, type TskConf } from "./config";
-import { discover } from "./discover";
-import { buildGraph } from "./graph";
-import { parseFile } from "./parse";
+import { loadConfig, type TskConf } from "./config.ts";
+import { discover } from "./discover.ts";
+import { buildGraph } from "./graph.ts";
+import { parseFile } from "./parse.ts";
 
 export type Finding = Readonly<{ level: "ERROR" | "WARN" | "INFO"; path: string; detail: string }>;
 

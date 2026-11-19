@@ -2,7 +2,7 @@
 // includes, NOT a template engine (card ruling). Every task-derived string
 // goes through esc() — layout strings and data never mix raw.
 
-import type { Snapshot, SnapshotNode } from "./serve";
+import type { Snapshot, SnapshotNode } from "./serve.ts";
 
 export const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) =>

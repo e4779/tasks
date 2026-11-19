@@ -5,8 +5,8 @@
 // post-pass shelf-packs elk's own component boxes against the target aspect.
 // Boxes translate rigidly — elk's inner routing survives untouched.
 
-import type { Pt, Rect } from "./cards";
-import type { ElkEdgeRef } from "./elk-adapter";
+import type { Pt, Rect } from "./cards.ts";
+import type { ElkEdgeRef } from "./elk-adapter.ts";
 
 // gaps big enough that the edge bundler's BAND=40 corridors and the ac13
 // bus detector (±20 band + x-overlap) can never couple two components

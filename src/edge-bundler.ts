@@ -6,8 +6,8 @@
 // card-attached stubs snap to the card's centre line so a shared source or
 // target paints ONE drop/rise instead of elk's per-edge fan.
 
-import type { Pt } from "./cards";
-import { type ElkEdgeRef, edgeId } from "./elk-adapter";
+import type { Pt } from "./cards.ts";
+import { type ElkEdgeRef, edgeId } from "./elk-adapter.ts";
 
 export type Rect = Readonly<{ x: number; y: number; w: number; h: number }>;
 export type BundleEdge = ElkEdgeRef;

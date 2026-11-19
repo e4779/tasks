@@ -1,14 +1,17 @@
 import { readFileSync } from "node:fs";
-import { basename, dirname, relative, resolve, sep } from "node:path";
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { basename, dirname, extname, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
-import { DEFAULT_TERMINALS, loadConfig, terminalsOf } from "./config";
-import { discover } from "./discover";
-import type { Graph } from "./graph";
-import { buildGraph } from "./graph";
-import { renderGraph } from "./graph-view";
-import { renderMd } from "./markdown";
-import { hardBlocked, nextUp } from "./next";
-import { parseFile } from "./parse";
+import { DEFAULT_TERMINALS, loadConfig, terminalsOf } from "./config.ts";
+import { discover } from "./discover.ts";
+import type { Graph } from "./graph.ts";
+import { buildGraph } from "./graph.ts";
+import { renderGraph } from "./graph-view.ts";
+import { renderMd } from "./markdown.ts";
+import { hardBlocked, nextUp } from "./next.ts";
+import { parseFile } from "./parse.ts";
 import {
   docPage,
   filtered,
@@ -18,7 +21,7 @@ import {
   nextPage,
   notFoundPage,
   page,
-} from "./render";
+} from "./render.ts";
 
 export type SnapshotNode = Readonly<{
   path: string;
@@ -49,7 +52,7 @@ export const snapshot = (
   };
 };
 
-const webRoot = resolve(import.meta.dir, "..", "web");
+const webRoot = resolve(import.meta.dirname, "..", "web");
 
 // vendor: constant pathname → constant node_modules file, nothing user-controlled to traverse
 const VENDOR = {
@@ -66,7 +69,25 @@ const VENDOR = {
 // trust boundary: serve only files physically under web/ (no traversal, no project files)
 const safeWebFile = (rel: string) => {
   const abs = resolve(webRoot, rel);
-  return abs.startsWith(`${webRoot}${sep}`) ? Bun.file(abs) : null;
+  return abs.startsWith(`${webRoot}${sep}`) ? abs : null;
+};
+
+// node Response does no extension sniffing (bun's file API did): map the two kinds we ship
+const MIME: Record<string, string> = {
+  ".css": "text/css",
+  ".js": "text/javascript",
+};
+const fileResponse = async (path: string): Promise<Response | null> => {
+  try {
+    return new Response(await readFile(path), {
+      headers: {
+        "cache-control": "no-store",
+        "content-type": MIME[extname(path)] ?? "application/octet-stream",
+      },
+    });
+  } catch {
+    return null; // missing file — caller answers 404
+  }
 };
 
 const HTML = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" };
@@ -97,123 +118,164 @@ const relOf = (rs: readonly string[], abs: string): string => {
 };
 
 // unauthenticated read-only server — bind wider than loopback only on trusted LAN
-export const startServer = (roots: string[], port: number, host = "127.0.0.1") => {
-  const server = Bun.serve({
-    hostname: host,
-    port,
-    fetch: async (req) => {
-      if (req.method !== "GET" && req.method !== "HEAD")
-        return new Response("method not allowed", { status: 405 });
-      const url = new URL(req.url);
-      // decode AFTER url parsing: %2F and friends become path structure here,
-      // but every /doc candidate still faces the corpus-membership check below
-      const p = decodeURIComponent(url.pathname);
+export type ServeHandle = Readonly<{
+  hostname: string;
+  port: number;
+  stop: (closeActive?: boolean) => void;
+}>;
 
-      if (p === "/favicon.ico")
-        // 204: a real response with zero bytes on the wire — kills the 404 console noise
-        return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+export const startServer = async (
+  roots: string[],
+  port: number,
+  host = "127.0.0.1",
+): Promise<ServeHandle> => {
+  // runtime-neutral fetch handler: same logic under node and bun
+  const handler = async (req: Request): Promise<Response> => {
+    if (req.method !== "GET" && req.method !== "HEAD")
+      return new Response("method not allowed", { status: 405 });
+    const url = new URL(req.url);
+    // decode AFTER url parsing: %2F and friends become path structure here,
+    // but every /doc candidate still faces the corpus-membership check below
+    const p = decodeURIComponent(url.pathname);
 
-      if (p === "/")
-        // classic pages: the entry point is the list, not a shell
-        return new Response(null, { status: 303, headers: { location: "/list" } });
+    if (p === "/favicon.ico")
+      // 204: a real response with zero bytes on the wire — kills the 404 console noise
+      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
 
-      if (p === "/list" || p === "/graph") {
-        const m = await model(roots);
-        const q = url.searchParams.get("q") ?? "";
-        const statusParam = url.searchParams.get("status");
-        const status = !statusParam ? null : statusParam;
-        const rel = (abs: string) => relOf(m.rs, abs);
-        const docHref = (abs: string) => `/doc/${encodeURI(rel(abs))}`;
-        // htmx-style swap: the client glue tags its fetch `x-fragment: main`;
-        // absent or any other value gets the classic full page — the form
-        // still works without JS and the enhancement degrades to a reload
-        const frag = req.headers.get("x-fragment") === "main";
-        if (p === "/list") {
-          const { nodes } = filtered(m.snap, q, status, false);
-          const body = listTable(nodes, rel);
-          const filters = filterForm("list", q, status);
-          return frag
-            ? html(mainFragment("list — tsk", body, filters))
-            : html(page({ active: "list", title: "list — tsk", body, filters }));
-        }
-        const { nodes, edges } = filtered(m.snap, q, status, true); // graph keeps ghosts (ghost edges included)
-        const body = await renderGraph(nodes, edges, docHref);
-        const filters = filterForm("graph", q, status);
+    if (p === "/")
+      // classic pages: the entry point is the list, not a shell
+      return new Response(null, { status: 303, headers: { location: "/list" } });
+
+    if (p === "/list" || p === "/graph") {
+      const m = await model(roots);
+      const q = url.searchParams.get("q") ?? "";
+      const statusParam = url.searchParams.get("status");
+      const status = !statusParam ? null : statusParam;
+      const rel = (abs: string) => relOf(m.rs, abs);
+      const docHref = (abs: string) => `/doc/${encodeURI(rel(abs))}`;
+      // htmx-style swap: the client glue tags its fetch `x-fragment: main`;
+      // absent or any other value gets the classic full page — the form
+      // still works without JS and the enhancement degrades to a reload
+      const frag = req.headers.get("x-fragment") === "main";
+      if (p === "/list") {
+        const { nodes } = filtered(m.snap, q, status, false);
+        const body = listTable(nodes, rel);
+        const filters = filterForm("list", q, status);
         return frag
-          ? html(mainFragment("graph — tsk", body, filters))
-          : html(
-              page({
-                active: "graph",
-                cls: "fill",
-                title: "graph — tsk",
-                body,
-                zoom: true,
-                filters,
-              }),
-            );
+          ? html(mainFragment("list — tsk", body, filters))
+          : html(page({ active: "list", title: "list — tsk", body, filters }));
       }
-
-      if (p === "/next") {
-        const m = await model(roots);
-        return html(nextPage(nextUp(m.graph, terminalsOf(m.conf)), (abs) => relOf(m.rs, abs)));
-      }
-
-      if (p === "/doc" || p.startsWith("/doc/")) {
-        const rest = p.slice("/doc/".length);
-        const m = await model(roots);
-        // trust boundary: the relpath resolves against the served roots and
-        // MUST name a corpus member (recomputed per request) — abs paths, ..
-        // and unknown files all miss the set and 404 before any fs read
-        const abs = m.rs.map((r) => resolve(r, rest)).find((c) => m.files.includes(c));
-        if (!abs) return html(notFoundPage(rest), 404);
-        try {
-          const r = parseFile(abs, m.rs, m.conf);
-          const source = readFileSync(abs, "utf8");
-          const title = r.ok ? r.v.title : basename(abs, ".md");
-          // same gray-matter split parse.ts runs, so parser and page agree on
-          // the body; first ^# line dropped — it is the very line above shows as title
-          const body = matter(source).content.replace(/^# .+\n?/m, "");
-          const next = nextUp(m.graph, terminalsOf(m.conf))[0];
-          // D3 trust pattern (same as the route itself): a blocked-by entry
-          // links only when it names a corpus member; everything else stays inert text
-          const linkOf = (raw: string): string | null => {
-            const target = resolve(dirname(abs), raw); // links resolve vs the doc's dir (parse.ts convention)
-            return m.files.includes(target) ? `/doc/${encodeURI(relOf(m.rs, target))}` : null;
-          };
-          return html(
+      const { nodes, edges } = filtered(m.snap, q, status, true); // graph keeps ghosts (ghost edges included)
+      const body = await renderGraph(nodes, edges, docHref);
+      const filters = filterForm("graph", q, status);
+      return frag
+        ? html(mainFragment("graph — tsk", body, filters))
+        : html(
             page({
-              active: "",
-              title: `${title} — tsk`,
-              body: docPage({
-                title,
-                html: renderMd(body),
-                source,
-                status: r.ok ? r.v.status : null,
-                attrs: r.ok ? r.v.attrs : {},
-                linkOf,
-                next: next ? `/doc/${encodeURI(relOf(m.rs, next.path))}` : null,
-              }),
+              active: "graph",
+              cls: "fill",
+              title: "graph — tsk",
+              body,
+              zoom: true,
+              filters,
             }),
           );
-        } catch {
-          return html(notFoundPage(rest), 404); // vanished mid-request — same answer as never-existed
-        }
-      }
+    }
 
-      if (p.startsWith("/vendor/")) {
-        const rel = VENDOR[p.slice("/vendor/".length) as keyof typeof VENDOR];
-        const f = rel && Bun.file(resolve(import.meta.dir, "..", "node_modules", rel));
-        return f && (await f.exists())
-          ? new Response(f, { headers: { "cache-control": "no-store" } })
-          : new Response("not found", { status: 404 });
-      }
+    if (p === "/next") {
+      const m = await model(roots);
+      return html(nextPage(nextUp(m.graph, terminalsOf(m.conf)), (abs) => relOf(m.rs, abs)));
+    }
 
-      const file = safeWebFile(p.slice(1));
-      return file && (await file.exists())
-        ? new Response(file, { headers: { "cache-control": "no-store" } })
-        : html(notFoundPage(p), 404);
-    },
+    if (p === "/doc" || p.startsWith("/doc/")) {
+      const rest = p.slice("/doc/".length);
+      const m = await model(roots);
+      // trust boundary: the relpath resolves against the served roots and
+      // MUST name a corpus member (recomputed per request) — abs paths, ..
+      // and unknown files all miss the set and 404 before any fs read
+      const abs = m.rs.map((r) => resolve(r, rest)).find((c) => m.files.includes(c));
+      if (!abs) return html(notFoundPage(rest), 404);
+      try {
+        const r = parseFile(abs, m.rs, m.conf);
+        const source = readFileSync(abs, "utf8");
+        const title = r.ok ? r.v.title : basename(abs, ".md");
+        // same gray-matter split parse.ts runs, so parser and page agree on
+        // the body; first ^# line dropped — it is the very line above shows as title
+        const body = matter(source).content.replace(/^# .+\n?/m, "");
+        const next = nextUp(m.graph, terminalsOf(m.conf))[0];
+        // D3 trust pattern (same as the route itself): a blocked-by entry
+        // links only when it names a corpus member; everything else stays inert text
+        const linkOf = (raw: string): string | null => {
+          const target = resolve(dirname(abs), raw); // links resolve vs the doc's dir (parse.ts convention)
+          return m.files.includes(target) ? `/doc/${encodeURI(relOf(m.rs, target))}` : null;
+        };
+        return html(
+          page({
+            active: "",
+            title: `${title} — tsk`,
+            body: docPage({
+              title,
+              html: renderMd(body),
+              source,
+              status: r.ok ? r.v.status : null,
+              attrs: r.ok ? r.v.attrs : {},
+              linkOf,
+              next: next ? `/doc/${encodeURI(relOf(m.rs, next.path))}` : null,
+            }),
+          }),
+        );
+      } catch {
+        return html(notFoundPage(rest), 404); // vanished mid-request — same answer as never-existed
+      }
+    }
+
+    if (p.startsWith("/vendor/")) {
+      const rel = VENDOR[p.slice("/vendor/".length) as keyof typeof VENDOR];
+      const f =
+        rel && (await fileResponse(resolve(import.meta.dirname, "..", "node_modules", rel)));
+      return f ?? new Response("not found", { status: 404 });
+    }
+
+    const file = safeWebFile(p.slice(1));
+    return (file ? await fileResponse(file) : null) ?? html(notFoundPage(p), 404);
+  };
+
+  // thin node:http driver: node req → Request, handler, Response → res
+  const server = createServer(async (nodeReq, nodeRes) => {
+    try {
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(nodeReq.headers))
+        if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(", ") : v);
+      const res = await handler(
+        new Request(`http://${nodeReq.headers.host ?? `${host}:${port}`}${nodeReq.url}`, {
+          method: nodeReq.method ?? "GET",
+          headers,
+        }),
+      );
+      const body = Buffer.from(await res.arrayBuffer());
+      nodeRes.writeHead(res.status, Object.fromEntries(res.headers));
+      nodeRes.end(nodeReq.method === "HEAD" ? undefined : body);
+    } catch {
+      nodeRes.writeHead(500).end("internal error"); // unhandled route crash — the old bun driver answered 500 too
+    }
   });
-  console.error(`tsk serve → http://${host}:${server.port}/`);
-  return server;
+  let bound = port;
+  // node listen is async (bun's old serve API bound synchronously): await bind so port/host are real on return
+  await new Promise<void>((ok) =>
+    server.listen(port, host, () => {
+      bound = (server.address() as AddressInfo).port;
+      console.error(`tsk serve → http://${host}:${bound}/`);
+      ok();
+    }),
+  );
+  return {
+    hostname: host,
+    get port() {
+      return bound;
+    },
+    stop: (closeActive = true) => {
+      if (closeActive) server.closeAllConnections(); // Bun stop(true) semantics
+      server.close();
+    },
+  };
 };
