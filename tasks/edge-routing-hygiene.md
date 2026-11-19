@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Edge routing hygiene — no pass-through, no overshoot, no phantom knees
