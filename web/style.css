@@ -301,6 +301,9 @@ a.back {
   justify-content: center;
   align-content: start;
   column-gap: var(--size-6);
+  /* breakout-right compensation: half the D3 rail+gap once the rail is
+     active (see the >=1280px block below) */
+  --breakout-extra: 0px;
 }
 /* auto-placement quirk: explicitly-placed aside pulled a later auto child into
    the rail — pin every child to column 1, the aside overrides */
@@ -308,13 +311,16 @@ a.back {
   grid-column: 1;
 }
 .doc pre {
-  /* operator ruling 2026-11-19: code stays IN THE PARAGRAPH FLOW — like
-     4779.ru's .mbe-code pre: no breakout, overflow scrolls INSIDE.
-     (centered-breakout experiment failed: % margins resolved against the
-     grid track measured off-center in the wild, and page-centering fought
-     the D3 rail — both reverted) */
+  /* operator ruling 2026-11-19: left edge = the paragraph column; right
+     edge = page safe margin (24px); overflow scrolls INSIDE (like
+     4779.ru's .mbe-code pre). Geometry: margin-right = (100vw - 100%)/2
+     cancels the column centering exactly (no ch units — they resolve
+     differently in the mono vs sans font), --breakout-extra adds half
+     the D3 rail+gap at >=1280px; max(...,0px) guards narrow viewports */
   white-space: pre;
   overflow-x: auto;
+  max-inline-size: none; /* open-props normalize clamps :where(pre) to max-content — width must fill instead */
+  margin-right: min(calc(var(--size-3) + 24px - var(--breakout-extra) - (100vw - 100%) / 2), 0px);
   background: var(--surface-1);
   border: 1px solid var(--surface-3);
   border-radius: 8px;
@@ -346,6 +352,7 @@ a.next:hover {
 @media (min-width: 1280px) {
   .doc {
     grid-template-columns: minmax(0, 75ch) 15rem;
+    --breakout-extra: calc((var(--size-6) + 15rem) / 2);
   }
   .marginnote {
     grid-column: 2;
