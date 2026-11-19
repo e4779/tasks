@@ -62,7 +62,7 @@ export const buildElkGraph = (
           "elk.direction": "UP",
           "elk.aspectRatio": String(aspect),
           "elk.spacing.nodeNode": "230", // wide: merged single-line graph is narrow — ac2 needs ≥0.5 cover at wide-short viewports
-          "elk.layered.spacing.nodeNodeBetweenLayers": "56",
+          "elk.layered.spacing.nodeNodeBetweenLayers": "200",
           // nodeSize.constraints deliberately NOT set: width/height hold as given
         },
   children: nodes.map((n) => {

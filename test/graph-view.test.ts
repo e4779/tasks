@@ -17,7 +17,7 @@ const snap = snapshot(buildGraph(tasks));
 const svg = await renderGraph(snap.nodes, snap.edges, (abs) => `/doc/${abs.split("/").pop()}`);
 
 test("renders the full corpus as one inline SVG: cards, edges, trunk buses, legend", () => {
-  expect(svg).toMatch(/<div class="tsk-graph" style="aspect-ratio:[\d.]+"><svg data-zoom/);
+  expect(svg).toMatch(/<div class="tsk-graph"><svg data-zoom/); // height via flex fill — no aspect-ratio emission (operator 2026-11-19)
   expect(svg.match(/<g class="card /g)?.length).toBe(8); // 7 cards + missing-dep ghost
   expect(svg.match(/<path class="edge /g)?.length).toBeGreaterThan(0);
   expect(svg).toContain('class="tsk-legend"');

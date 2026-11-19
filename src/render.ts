@@ -33,12 +33,14 @@ export const page = ({
   body,
   zoom = false,
   filters = "",
+  cls = "",
 }: Readonly<{
   active: "" | "list" | "next" | "graph";
   title: string;
   body: string;
   zoom?: boolean;
   filters?: string;
+  cls?: string;
 }>): string =>
   `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -56,7 +58,7 @@ export const page = ({
 <link rel="stylesheet" href="/style.css"/>
 ${zoom ? '<script src="/vendor/d3.min.js" defer></script>\n' : ""}<script src="/main.js" defer></script>
 </head>
-<body>
+<body${cls ? ` class="${cls}"` : ""}>
 <nav>
 <ul>${NAV.map(([name, href]) => `<li><a href="${href}"${active === name ? ' aria-current="page"' : ""}>${name}</a></li>`).join("")}</ul>
 <button id="theme" type="button" aria-label="toggle light/dark theme">◐</button>

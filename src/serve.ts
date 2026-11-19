@@ -130,6 +130,7 @@ export const startServer = (roots: string[], port: number, host = "127.0.0.1") =
         return html(
           page({
             active: "graph",
+            cls: "fill",
             title: "graph — tsk",
             body: await renderGraph(nodes, edges, docHref),
             zoom: true,

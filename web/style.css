@@ -276,6 +276,10 @@ tbody a:hover {
   color: var(--text-2);
   font-size: 1rem;
 }
+.doc {
+  max-width: 75ch;
+  margin-inline: auto;
+}
 .doc .back {
   display: inline-block;
   padding: var(--size-3) 0;
@@ -292,8 +296,9 @@ tbody a:hover {
 }
 .doc .doc-title {
   color: var(--text-1);
-  font-size: 1.5rem;
-  margin: var(--size-2) 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: var(--size-2) 0 var(--size-3);
 }
 .doc .md h1,
 .doc .md h2,
@@ -411,4 +416,27 @@ tbody a:hover {
 }
 [data-theme="light"] .doc .md li > input[type="checkbox"] {
   accent-color: var(--blue-7);
+}
+
+/* full-height layout: the graph page fills the window (operator 2026-11-19);
+   body.fill set only on the graph route */
+body {
+  min-height: 100vh;
+}
+body.fill {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+body.fill main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: 0;
+}
+body.fill .tsk-graph {
+  flex: 1;
+  height: auto;
+  max-height: none;
 }

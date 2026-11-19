@@ -82,7 +82,7 @@ export const renderGraph = async (
   const out: string[] = [
     // data-edges: pre-filter corpus edge count — the probe's zero-links
     // semantics (edgeless corpora legitimately paint nothing)
-    `<div class="tsk-graph" style="aspect-ratio:${Math.round((w / Math.max(h, 1)) * 100) / 100}"><svg data-zoom data-edges="${edges.length}" viewBox="${viewBox}" role="img" aria-label="task graph"><g>`,
+    `<div class="tsk-graph"><svg data-zoom data-edges="${edges.length}" viewBox="${viewBox}" role="img" aria-label="task graph"><g>`,
   ];
   for (const t of trunks)
     out.push(
