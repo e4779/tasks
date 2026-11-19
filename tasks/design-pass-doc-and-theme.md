@@ -392,19 +392,6 @@ default. `data-theme="dark"` stays the default attribute (pinned by
 `test/web-tokens.test.ts`); light tokens = neutral per D1.
 
 
-## Design decisions (final, operator + parent, 2026-11-19)
-
-- **D1 colors** — tsk does NOT parrot the operator's tufte-styled personal site (zola-harmless: cream #fffff8, serif). Light theme = NEUTRAL: Open Props gray ramp surfaces + text gray-9/10; dark = current desaturated surfaces. Chip/accent hues desaturated in BOTH themes.
-- **D2 fonts** — use-system-fonts: system sans everywhere; ui-monospace for paths/ids/code. NO serif in doc pages (operator rejected; his personal site keeps serif — there it stays).
-- **D3 marginnotes** — the borrowed idea (operator's zola-harmless `<aside class="marginnote">` pattern, in-body not footer): frontmatter metadata (status, blocked-by resolved paths, tags, created_at) renders as a right-rail aside on /doc at ≥1280px viewport; stacks below content on narrower. Styling: --text-2, 0.85rem, no borders. Raw source keeps <details>.
-- **D4 title full-width** (ruled): docPage renders <h1> BEFORE the .doc column div (structural breakout).
-- **D5 lists** (ruled): inside .doc — list-style-position outside, padding-left 0 (markers hang in the gutter, text at full measure); nested ul margin-left 1rem; markers tinted --text-2.
-- **D6 pre/code breakout** (ruled earlier): pre escapes the column (~1200px max, centered).
-- **D7 permalinks**: h2/h3 hover ¶ anchors (--text-2).
-- **D8 next-link**: doc footer "next →" to nextUp[0] (only when non-empty).
-- **D9 checkbox write-back**: OUT of this card (feature, not design) — follow-up card if requested.
-- **D10 theme toggle mechanics** unchanged (data-theme flip + localStorage + no-flash head script); light tokens neutral per D1.
-
 ## Decomposition
 
 <!-- Placeholder — DO NOT pre-fill.
