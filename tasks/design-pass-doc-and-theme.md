@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 blocked-by:
   - ./real-routes-kill-hash.md
 ---

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Real routes + server-rendered pages (wave C) — hash, SPA and /api all die
