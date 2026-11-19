@@ -117,7 +117,7 @@ export const parseGraphHtml = (html) => {
   for (let i = 0; i < cards.length; i++)
     for (let j = i + 1; j < cards.length; j++)
       if (intersect(cards[i], cards[j]))
-        overlaps.push(short(cards[i].path) + "×" + short(cards[j].path));
+        overlaps.push(`${short(cards[i].path)}×${short(cards[j].path)}`);
 
   // ac10/ac11: painted pieces parse back to polylines; endpoints sit on the
   // card rect (eps 1) or ON a trunk line (y at the trunk, x in its span)
@@ -134,23 +134,23 @@ export const parseGraphHtml = (html) => {
   const edgeIssues = [];
   const attachIssues = [];
   for (const p of pieces) {
-    const name = short(p.from) + "→" + short(p.to);
+    const name = `${short(p.from)}→${short(p.to)}`;
     const poly = p.poly;
     if (poly.length < 2) {
-      edgeIssues.push(name + ":no-polyline");
+      edgeIssues.push(`${name}:no-polyline`);
       continue;
     }
     for (let i = 0; i + 1 < poly.length; i++)
       if (Math.abs(poly[i].x - poly[i + 1].x) > 1e-9 && Math.abs(poly[i].y - poly[i + 1].y) > 1e-9)
-        edgeIssues.push(name + ":diagonal");
+        edgeIssues.push(`${name}:diagonal`);
     const sr = p.from ? byPath.get(p.from) : undefined;
     const dr = p.to ? byPath.get(p.to) : undefined;
     const first = poly[0];
     const last = poly.at(-1);
     if (!first || (!sr && p.from) || !(pointOnRect(first, sr ?? first, 1) || onTrunk(first)))
-      attachIssues.push(name + ":src");
+      attachIssues.push(`${name}:src`);
     if (!last || (!dr && p.to) || !(pointOnRect(last, dr ?? last, 1) || onTrunk(last)))
-      attachIssues.push(name + ":dst");
+      attachIssues.push(`${name}:dst`);
   }
 
   // ac7: the merge contract generalized — every painted unordered pair carries
@@ -219,7 +219,7 @@ export const parseGraphHtml = (html) => {
   });
   const buses = [...groups.values()]
     .filter((g) => g.length > 1)
-    .map((g) => g.map((s) => Math.round(s.y) + ":" + Math.round(s.x0) + "→" + Math.round(s.x1)));
+    .map((g) => g.map((s) => `${Math.round(s.y)}:${Math.round(s.x0)}→${Math.round(s.x1)}`));
 
   // ac14: per-kind bundles + shared drops; legend with three samples
   const legendSamples = (html.match(/tsk-legend-sample/g) ?? []).length;
@@ -235,7 +235,7 @@ export const parseGraphHtml = (html) => {
       m.kinds.add(p.kind);
       const fr = p.from ? byPath.get(p.from) : undefined;
       const to = p.to ? byPath.get(p.to) : undefined;
-      const ek = short(p.from) + "→" + short(p.to); // per-edge rise key
+      const ek = `${short(p.from)}→${short(p.to)}`; // per-edge rise key
       const put = (map, id, pt) => map.set(id, [...(map.get(id) ?? []), Math.round(pt.x)]);
       for (const pt of free) {
         if (fr && pointOnRect(pt, fr, 1)) put(m.drops, p.from, pt);
@@ -250,10 +250,10 @@ export const parseGraphHtml = (html) => {
     multiDrop: members.flatMap((m, ti) => [
       ...[...m.drops]
         .filter(([, xs]) => new Set(xs).size > 1)
-        .map(([id, xs]) => "drop " + short(id) + "@t" + ti + ":" + xs.join(",")),
+        .map(([id, xs]) => `drop ${short(id)}@t${ti}:${xs.join(",")}`),
       ...[...m.rises]
         .filter(([, xs]) => new Set(xs).size > 1)
-        .map(([id, xs]) => "rise " + id + "@t" + ti + ":" + xs.join(",")),
+        .map(([id, xs]) => `rise ${id}@t${ti}:${xs.join(",")}`),
     ]),
   };
 
@@ -263,7 +263,7 @@ export const parseGraphHtml = (html) => {
     titleFit.cards++;
     if (c.title.includes("…")) titleFit.ellipsis.push(short(c.path));
     if (c.w !== cardSize(c.title, serverCtx).w)
-      titleFit.wide.push(short(c.path) + "+" + Math.round(c.w - cardSize(c.title, serverCtx).w));
+      titleFit.wide.push(`${short(c.path)}+${Math.round(c.w - cardSize(c.title, serverCtx).w)}`);
   }
 
   return {

@@ -71,6 +71,27 @@ test("no two cards overlap (ac9 contract, from the served attrs themselves)", ()
     }
 });
 
+test("D3b: identical stub geometries paint once (no duplicate d strings)", async () => {
+  // a/b same layer, c above: both target stubs snap to centre(c) → identical
+  // d — the SVG must carry the shared line exactly once
+  const node = (path: string, title: string) => ({
+    path,
+    title,
+    status: "wat",
+    blocked: false,
+    ghost: false,
+  });
+  const nodes = [node("/x/a.md", "a"), node("/x/b.md", "b"), node("/x/c.md", "c")];
+  const edges = [
+    { from: "/x/a.md", to: "/x/c.md", kind: "hard" as const },
+    { from: "/x/b.md", to: "/x/c.md", kind: "hard" as const },
+  ];
+  const svg = await renderGraph(nodes, edges, () => "#");
+  const ds = [...svg.matchAll(/<path class="edge[^"]*"[^>]* d="([^"]+)"/g)].map((m) => m[1]);
+  expect(ds.length).toBeGreaterThanOrEqual(2); // fan painted — post-D1 the stubs offset so each is distinct
+  expect(new Set(ds).size).toBe(ds.length);
+});
+
 test("edgeless corpus: rectPacking path, no edges painted, empty-state message for no matches", async () => {
   const edgeless = await renderGraph(
     snap.nodes.slice(0, 2).map((n) => ({ ...n, ghost: false })),

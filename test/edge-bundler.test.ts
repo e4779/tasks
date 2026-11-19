@@ -208,6 +208,124 @@ test("edge with two bundled runs splits into three pieces (H-V-H through two cor
   ]);
 });
 
+test("fp-noise elk coords still snap — no overshoot knee, no phantom collinear (D2/D3a)", () => {
+  // verbatim homelab jitter: start/bend x of ONE vertical differ by ~1e-12,
+  // strict equality missed the snap and kept elk's track beside the trunk
+  // level: 678→668→663 up-past-and-back
+  const e1 = { from: "a.md", to: "c.md", kind: "hard" };
+  const e2 = { from: "b.md", to: "c.md", kind: "hard" };
+  const rects = new Map<string, Rect>([
+    ["a.md", { x: 2021.534, y: 678, w: 120, h: 26 }], // centre 2081.534
+    ["b.md", { x: 1880.544, y: 678, w: 120, h: 26 }], // centre 1940.544
+    ["c.md", { x: 1430, y: 452, w: 120, h: 26 }], // centre 1490
+  ]);
+  const { pieces, trunks } = bundleEdges(
+    new Map<string, Pt[]>([
+      [
+        edgeId(e1),
+        [
+          p(2081.5339999999997, 678),
+          p(2081.5340000000006, 668),
+          p(1561.8880000000001, 668),
+          p(1561.8879999999997, 478),
+        ],
+      ],
+      [
+        edgeId(e2),
+        [
+          p(1940.5440000000006, 678),
+          p(1940.5440000000008, 662),
+          p(1490.0000000002, 662),
+          p(1489.9999999998, 478),
+        ],
+      ],
+    ]),
+    [e1, e2],
+    rects,
+  );
+  expect(trunks).toEqual([{ kind: "hard", y: 665, x0: 1490, x1: 2081.534 }]);
+  // both edges snap both ends: border→trunk stubs only, shared target stub
+  expect(pieces.get(edgeId(e1))).toEqual([
+    [p(2081.534, 678), p(2081.534, 665)],
+    [p(1490, 665), p(1490, 478)],
+  ]);
+  expect(pieces.get(edgeId(e2))).toEqual([
+    [p(1940.544, 678), p(1940.544, 665)],
+    [p(1490, 665), p(1490, 478)],
+  ]);
+});
+
+test("D1: bottom trunk x == top exit x on one card — fewer side (top) slides 16px, raw chain stays orthogonal", () => {
+  // verbatim thm012 ruling case: two bundled edges rise to c's bottom centre
+  // while c's own exit leaves the top at the same x — one piercing line
+  const e1 = { from: "a.md", to: "c.md", kind: "hard" };
+  const e3 = { from: "d.md", to: "c.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "b.md", kind: "hard" }; // pure vertical, no run → never bundled
+  const rects = new Map<string, Rect>([
+    ["a.md", { x: 310.138, y: 678, w: 120, h: 26 }], // centre 370.138
+    ["d.md", { x: 843.262, y: 678, w: 120, h: 26 }], // centre 903.262
+    ["c.md", { x: 1430, y: 452, w: 120, h: 26 }], // centre 1490, span 1430..1550
+    ["b.md", { x: 1430, y: 226, w: 120, h: 26 }],
+  ]);
+  const { pieces, trunks } = bundleEdges(
+    new Map<string, Pt[]>([
+      [
+        edgeId(e1),
+        [
+          p(370.1379999999997, 678),
+          p(370.13800000000015, 658),
+          p(1490.0000000002, 658),
+          p(1489.9999999998, 478),
+        ],
+      ],
+      [
+        edgeId(e3),
+        [p(903.2620000000001, 678), p(903.262, 668), p(1490.00000005, 668), p(1489.99999995, 478)],
+      ],
+      [edgeId(e2), [p(1490.0000000003, 452), p(1489.9999999997, 252)]],
+    ]),
+    [e1, e3, e2],
+    rects,
+  );
+  // the outgoing side (1 attachment) yields to the incoming pair: exit slides to 1506
+  expect(pieces.get(edgeId(e2))).toEqual([[p(1506, 452), p(1506, 252)]]);
+  // incoming trunk stubs stay at the centre — and the old 658 knee is gone
+  expect(pieces.get(edgeId(e1))).toEqual([
+    [p(370.138, 678), p(370.138, 663)],
+    [p(1490, 663), p(1490, 478)],
+  ]);
+  expect(pieces.get(edgeId(e3))).toEqual([
+    [p(903.262, 678), p(903.262, 663)],
+    [p(1490, 663), p(1490, 478)],
+  ]);
+  expect(trunks).toEqual([{ kind: "hard", y: 663, x0: 370.138, x1: 1490 }]);
+});
+
+test("D1: raw end with a bend slides only its vertical chain — the far attach keeps its x", () => {
+  const e1 = { from: "a.md", to: "c.md", kind: "hard" };
+  const e3 = { from: "d.md", to: "c.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "b.md", kind: "hard" }; // bent raw exit: vertical, H, vertical
+  const rects = new Map<string, Rect>([
+    ["a.md", { x: 310.138, y: 678, w: 120, h: 26 }],
+    ["d.md", { x: 843.262, y: 678, w: 120, h: 26 }],
+    ["c.md", { x: 1430, y: 452, w: 120, h: 26 }],
+    ["b.md", { x: 1380, y: 226, w: 120, h: 26 }], // centre 1440
+  ]);
+  const { pieces } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), [p(370.138, 678), p(370.138, 658), p(1490, 658), p(1490, 478)]],
+      [edgeId(e3), [p(903.262, 678), p(903.262, 668), p(1490, 668), p(1490, 478)]],
+      [edgeId(e2), [p(1490, 452), p(1490, 350), p(1440, 350), p(1440, 252)]],
+    ]),
+    [e1, e3, e2],
+    rects,
+  );
+  // only the start chain (452→350 at x 1490) slides; the 1440 attach survives
+  expect(pieces.get(edgeId(e2))).toEqual([
+    [p(1506, 452), p(1506, 350), p(1440, 350), p(1440, 252)],
+  ]);
+});
+
 test("empty and degenerate polylines survive (unrouted/self-loop edges)", () => {
   const { pieces, trunks } = bundleEdges(
     new Map([

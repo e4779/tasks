@@ -84,18 +84,31 @@ export const renderGraph = async (
     // semantics (edgeless corpora legitimately paint nothing)
     `<div class="tsk-graph"><svg data-zoom data-edges="${edges.length}" viewBox="${viewBox}" role="img" aria-label="task graph"><g>`,
   ];
+  // D3b: shared segments draw ONCE — N members rising to the same card emit
+  // identical stub d strings; keep the first occurrence (its from/to survives
+  // as provenance for the shared line)
+  const seenD = new Set<string>();
+  const emit = (cls: string, attrs: string, d: string) => {
+    if (seenD.has(d)) return;
+    seenD.add(d);
+    out.push(`<path class="${cls}"${attrs} d="${d}"/>`);
+  };
   for (const t of trunks)
-    out.push(
-      `<path class="edge trunk ${t.kind}" d="${polyToD([
+    emit(
+      `edge trunk ${t.kind}`,
+      "",
+      polyToD([
         { x: t.x0, y: t.y },
         { x: t.x1, y: t.y },
-      ])}"/>`, // trunk paint follows member kind
-    );
+      ]),
+    ); // trunk paint follows member kind
   for (const e of merged)
     for (const poly of pieces.get(edgeId(e)) ?? []) {
       if (poly.length < 2) continue; // unrouted edge (e.g. self-loop)
-      out.push(
-        `<path class="edge ${e.kind}${brokenIds.has(edgeId(e)) ? " broken" : ""}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="${polyToD(poly)}"/>`,
+      emit(
+        `edge ${e.kind}${brokenIds.has(edgeId(e)) ? " broken" : ""}`,
+        ` data-from="${esc(e.from)}" data-to="${esc(e.to)}"`,
+        polyToD(poly),
       );
     }
   for (const n of nodeObjs) {
