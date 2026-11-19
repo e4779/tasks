@@ -80,3 +80,18 @@ exists.
 - Soft edge: the package `agents/` dir gains its persona via
   [ponytail-user-level](./ponytail-user-level.md); this card is not gated on
   it.
+
+## Resolution — NPM-NOW (operator, 2026-11-19)
+
+Operator overturned the git-only default: dual channel. Registry package
+`@e4779/tasks` (unscoped `tsk` is taken on the registry, v0.3.2; both
+`@e4779/tasks` and `@e4779/tsk` were free — scope requires the npm
+username to be `e4779`, confirmed by operator). License ISC — canonical
+GitHub Licenses API template, holder `Nikolay Ermakov <e@4779.name>`.
+CI publishes on manual `v*` tags (.github/workflows/publish.yml: gates
+-> build -> node smoke -> npm publish --access public; NPM_TOKEN secret
+is set by the operator, never passes through agents). The dist build
+(see runtime-neutral-ship) is what makes the registry channel complete:
+the tarball carries compiled JS, consumers need no bun and no prepare.
+First release: `git tag v0.1.0 && git push origin v0.1.0` after the
+operator sets the NPM_TOKEN secret.

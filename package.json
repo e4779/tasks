@@ -1,5 +1,5 @@
 {
-  "name": "tsk",
+  "name": "@e4779/tasks",
   "type": "module",
   "bin": {
     "tsk": "dist/tsk.js"
@@ -35,5 +35,19 @@
     "@biomejs/biome": "^2.6.8",
     "@types/bun": "^1.4.4",
     "typescript": "^7.0.2"
+  },
+  "version": "0.1.0",
+  "description": "tasks as plain markdown documents - CLI with corpus check gates and a dependency graph viewer",
+  "license": "ISC",
+  "author": "Nikolay Ermakov <e@4779.name>",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/e4779/tasks.git"
   }
 }

@@ -1,0 +1,47 @@
+# Publish @e4779/tasks to npm on a manual version tag (v*).
+# Prerequisite: NPM_TOKEN secret (automation token with publish rights
+# for the @e4779 scope). Gates must pass BEFORE publish — a red test
+# or a failed smoke aborts the release.
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+
+      - name: install
+        run: bun install --frozen-lockfile
+
+      - name: gates
+        run: |
+          bun run check:full
+          bun test
+
+      - name: build
+        run: bun run build
+
+      - name: node smoke (compiled dist)
+        run: |
+          node dist/tsk.js list .
+          node dist/tsk.js check .
+          node bin/tsk.ts list .
+
+      - name: publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
