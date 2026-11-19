@@ -4,6 +4,16 @@
   "bin": {
     "tsk": "bin/tsk.ts"
   },
+  "pi": {
+    "skills": [
+      "./skills/tsk-workflow"
+    ],
+    "subagents": {
+      "agents": [
+        "./agents"
+      ]
+    }
+  },
   "scripts": {
     "check": "tsc --noEmit",
     "check:full": "biome check . && tsc --noEmit",
