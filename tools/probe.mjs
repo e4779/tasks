@@ -96,11 +96,13 @@ export const AC_STATE_EVAL = `(() => {
   const edgeIssues = [];
   const attach = [];
   const attachIssues = [];
+  const piecePolys = []; // parsed once here, reused by the AC14 member scan
   for (const p of edgeEls) {
     const name = short(p.dataset.from) + '→' + short(p.dataset.to);
     const poly = [...p.getAttribute('d').matchAll(/[ML](-?[\\d.]+) (-?[\\d.]+)/g)].map((m) => ({
       x: Number(m[1]), y: Number(m[2]),
     }));
+    piecePolys.push({ el: p, poly });
     if (poly.length < 2) { edgeIssues.push(name + ':no-polyline'); continue; }
     for (let i = 0; i + 1 < poly.length; i++)
       if (Math.abs(poly[i].x - poly[i + 1].x) > 1e-9 && Math.abs(poly[i].y - poly[i + 1].y) > 1e-9)
@@ -114,7 +116,11 @@ export const AC_STATE_EVAL = `(() => {
   }
   // AC13 edge buses: every horizontal segment on the painted DOM (pieces,
   // identity edges, trunks), grouped by y-band ±20 with transitive x-overlap
-  // — a corridor holding >1 segment is an unbundled bus
+  // WITHIN ONE KIND — per-kind bundling stacks hard/soft trunks side by side
+  // in one visual corridor, so the invariant is one horizontal PER KIND per
+  // band; same-kind horizontals sharing a band stay an unbundled bus
+  const kindOf = (el) =>
+    ['hard', 'soft', 'cycle'].find((k) => el.classList.contains(k)) ?? '?';
   const segs = [];
   for (const el of svg.querySelectorAll('path.edge')) {
     const poly = [...el.getAttribute('d').matchAll(/[ML](-?[\\d.]+) (-?[\\d.]+)/g)].map((m) => ({
@@ -126,6 +132,7 @@ export const AC_STATE_EVAL = `(() => {
           y: poly[i].y,
           x0: Math.min(poly[i].x, poly[i + 1].x),
           x1: Math.max(poly[i].x, poly[i + 1].x),
+          kind: kindOf(el),
         });
   }
   const par = segs.map((_, i) => i);
@@ -135,13 +142,56 @@ export const AC_STATE_EVAL = `(() => {
   };
   for (let a = 0; a < segs.length; a++)
     for (let b = a + 1; b < segs.length; b++)
-      if (Math.abs(segs[a].y - segs[b].y) <= 20 && segs[a].x0 < segs[b].x1 && segs[b].x0 < segs[a].x1)
+      if (
+        segs[a].kind === segs[b].kind &&
+        Math.abs(segs[a].y - segs[b].y) <= 20 && segs[a].x0 < segs[b].x1 && segs[b].x0 < segs[a].x1
+      )
         par[find(a)] = find(b);
   const groups = new Map();
   segs.forEach((s, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), s]));
   const buses = [...groups.values()]
     .filter((g) => g.length > 1)
     .map((g) => g.map((s) => Math.round(s.y) + ':' + Math.round(s.x0) + '→' + Math.round(s.x1)));
+  // AC14 per-kind bundles + shared drops + legend: member stubs per trunk
+  // share ONE kind; per (source card, trunk) exactly one drop x and per
+  // (target card, trunk) exactly one rise x (card-centre snapping); legend
+  // box with three samples lives on the graph view
+  const legendEl = g.querySelector('.tsk-legend');
+  const members = trunkSegs.map(() => ({ kinds: new Set(), drops: new Map(), rises: new Map() }));
+  for (const { el: p, poly } of piecePolys) {
+    for (let ti = 0; ti < trunkSegs.length; ti++) {
+      const t = trunkSegs[ti];
+      const free = poly.filter(
+        (pt) => !(Math.abs(pt.y - t.y) <= 1 && pt.x >= t.x0 - 1 && pt.x <= t.x1 + 1),
+      );
+      if (free.length === poly.length || free.length === 0) continue; // not a member / connector
+      const m = members[ti];
+      m.kinds.add(kindOf(p));
+      const fr = byPath.get(String(p.dataset.from));
+      const to = byPath.get(String(p.dataset.to));
+      const put = (map, id, pt) => map.set(id, [...(map.get(id) ?? []), Math.round(pt.x)]);
+      for (const pt of free) {
+        if (fr && cards.pointOnRect(pt, fr, 1)) put(m.drops, String(p.dataset.from), pt);
+        if (to && cards.pointOnRect(pt, to, 1)) put(m.rises, String(p.dataset.to), pt);
+      }
+    }
+  }
+  const bundles = {
+    legend: {
+      present: !!legendEl,
+      samples: legendEl ? legendEl.querySelectorAll('path.edge').length : 0,
+    },
+    trunkCount: trunkSegs.length,
+    mixed: members.map((m, i) => (m.kinds.size > 1 ? i : -1)).filter((i) => i >= 0),
+    multiDrop: members.flatMap((m, ti) => [
+      ...[...m.drops]
+        .filter(([, xs]) => new Set(xs).size > 1)
+        .map(([id, xs]) => 'drop ' + short(id) + '@t' + ti + ':' + xs.join(',')),
+      ...[...m.rises]
+        .filter(([, xs]) => new Set(xs).size > 1)
+        .map(([id, xs]) => 'rise ' + short(id) + '@t' + ti + ':' + xs.join(',')),
+    ]),
+  };
   // AC12: full titles — no canvas-era ellipsis cutoff, and the painted text fits
   // the rect sized for it (data-w - 4 = the BAR allowance on both sides of
   // the middle anchor, same margin graph.js reserves via cardSize padding)
@@ -184,6 +234,7 @@ export const AC_STATE_EVAL = `(() => {
     attach,
     attachIssues,
     bus: { horizontals: segs.length, corridors: groups.size, buses },
+    bundles,
     titleFit,
   };
 })()`;
@@ -397,6 +448,23 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
         state.bus.buses.length === 0 &&
         state.bus.horizontals === state.bus.corridors,
       detail: state?.bus ?? { fatal },
+    },
+    {
+      id: "ac14",
+      name: "bundle-homogeneity+legend",
+      // per-kind trunks: member stubs of one trunk share ONE kind; card-centre
+      // snapping gives one drop/rise x per (card, trunk); legend present with
+      // three samples. Missing payload is a fail, same contract as ac9-ac13
+      pass:
+        !fatal &&
+        !!state?.bundles &&
+        state.bundles.legend?.present === true &&
+        state.bundles.legend?.samples === 3 &&
+        Array.isArray(state.bundles.mixed) &&
+        state.bundles.mixed.length === 0 &&
+        Array.isArray(state.bundles.multiDrop) &&
+        state.bundles.multiDrop.length === 0,
+      detail: state?.bundles ?? { fatal },
     },
   ];
   return res.map((r) => ({ ...r, detail: JSON.parse(JSON.stringify(r.detail)) })); // NaN → null for a clean report

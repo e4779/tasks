@@ -10,6 +10,31 @@ const { d3, ELK } = globalThis;
 
 const dim = (n) => n.status === "done" || n.status === "cancelled";
 
+// legend: static kind semantics, tokens via the shared .edge classes
+const LEGEND = [
+  ["hard", "blocks (hard)"],
+  ["soft", "related (soft)"],
+  ["broken", "cycle"],
+];
+const legendDom = () => {
+  const box = document.createElement("div");
+  box.className = "tsk-legend";
+  for (const [kind, label] of LEGEND) {
+    const row = document.createElement("div");
+    row.className = "tsk-legend-row";
+    const s = svgEl("svg", {
+      class: "tsk-legend-sample",
+      width: 26,
+      height: 8,
+      viewBox: "0 0 26 8",
+    });
+    s.append(svgEl("path", { d: "M1 4H25", class: `edge ${kind}` }));
+    row.append(s, document.createTextNode(label));
+    box.append(row);
+  }
+  return box;
+};
+
 const BAR = 4; // status colour bar, left inside the rect
 const PAD = 2; // viewBox pad — slim: ac2 measures centre spread against the view, every pad px eats cover
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -79,7 +104,7 @@ class TskGraph extends HTMLElement {
         .zoom()
         .on("zoom", ({ transform }) => svg.querySelector("g").setAttribute("transform", transform)),
     );
-    this.replaceChildren(svg);
+    this.replaceChildren(svg, legendDom());
     return svg;
   }
 
@@ -105,11 +130,12 @@ class TskGraph extends HTMLElement {
     const result = await elk.layout(buildElkGraph(nodeObjs, sizes, merged, w / h));
     if (gen !== this.gen) return; // stale: a newer paint() owns the graph
     const { rects, polylines } = mapLayout(result);
-    // edge buses: parallel horizontal runs merge into shared trunks BEFORE
-    // painting — a bundled member paints pieces (stubs onto the trunk), never
-    // its own horizontal run; groups of 1 are identity, so bus-free corpora
-    // paint exactly what they painted before
-    const { pieces, trunks } = bundleEdges(polylines);
+    // edge buses: parallel horizontal runs merge into kind-homogeneous shared
+    // trunks BEFORE painting — a bundled member paints pieces (stubs onto the
+    // trunk), never its own horizontal run, and card-attached stubs snap to
+    // the card centre (one drop/rise per card); groups of 1 are identity, so
+    // bus-free corpora paint exactly what they painted before
+    const { pieces, trunks } = bundleEdges(polylines, merged, rects);
 
     // ONE coordinate world: everything below carries raw elk coords, the
     // viewBox is the only bridge to screen space — cards and edges cannot
@@ -130,7 +156,7 @@ class TskGraph extends HTMLElement {
             { x: t.x0, y: t.y },
             { x: t.x1, y: t.y },
           ]),
-          class: "edge trunk",
+          class: `edge trunk ${t.kind}`, // trunk paint follows member kind
         }),
       );
     for (const e of merged) {

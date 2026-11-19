@@ -36,14 +36,20 @@
       .st.none { color: var(--gray-6); }
       .next-item { display: flex; gap: var(--size-3); align-items: baseline; padding: .4rem 0; border-bottom: 1px solid var(--surface-3); }
       tbody tr { cursor: pointer; }
-      tsk-graph { display: block; height: 70vh; background: var(--surface-1); border: 1px solid var(--surface-3); border-radius: 8px; box-shadow: var(--shadow-2); }
+      tsk-graph { display: block; position: relative; height: 70vh; background: var(--surface-1); border: 1px solid var(--surface-3); border-radius: 8px; box-shadow: var(--shadow-2); }
       tsk-graph svg { display: block; border-radius: 8px; }
       tsk-graph .edge { fill: none; stroke-width: 1.5; }
       tsk-graph .edge.trunk { stroke: var(--gray-6); }
+      tsk-graph .edge.trunk.hard { stroke: var(--blue-5); }
+      tsk-graph .edge.trunk.soft { stroke: var(--gray-7); stroke-dasharray: 5 4; }
+      tsk-graph .edge.trunk.cycle { stroke: var(--red-6); stroke-dasharray: none; }
       tsk-graph .edge.hard { stroke: var(--blue-5); }
       tsk-graph .edge.soft { stroke: var(--gray-7); stroke-dasharray: 5 4; }
       tsk-graph .edge.broken { stroke: var(--red-5); stroke-dasharray: 2 4; }
       tsk-graph .edge.cycle { stroke: var(--red-6); stroke-dasharray: none; }
+      tsk-graph .tsk-legend { position: absolute; right: var(--size-3); bottom: var(--size-3); display: flex; flex-direction: column; gap: var(--size-1); padding: var(--size-2) var(--size-3); background: var(--surface-2); border: 1px solid var(--surface-3); border-radius: 6px; font-size: .85em; color: var(--text-2); pointer-events: none; }
+      tsk-graph .tsk-legend-row { display: flex; align-items: center; gap: var(--size-2); }
+      tsk-graph .tsk-legend-sample { display: block; }
       tsk-graph .card { cursor: pointer; }
       tsk-graph .card .box { fill: var(--surface-2); stroke: var(--surface-4); }
       tsk-graph .card.ghost .box { stroke-dasharray: 3 3; }

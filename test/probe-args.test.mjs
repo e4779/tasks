@@ -88,6 +88,12 @@ const healthyState = {
   ],
   attachIssues: [],
   bus: { horizontals: 4, corridors: 4, buses: [] },
+  bundles: {
+    legend: { present: true, samples: 3 },
+    trunkCount: 2,
+    mixed: [],
+    multiDrop: [],
+  },
   titleFit: { cards: 8, ellipsis: [], wide: [] },
 };
 const healthyInteract = {
@@ -96,11 +102,57 @@ const healthyInteract = {
   z2: 1,
 };
 
-test("acResults: healthy payloads pass AC1-AC3, AC5-AC13; AC4 stays deferred", () => {
+test("acResults: healthy payloads pass AC1-AC3, AC5-AC14; AC4 stays deferred", () => {
   const ac = acResults(healthyState, healthyInteract, 204, 0);
   expect(ac.filter((r) => r.id !== "ac4").every((r) => r.pass === true)).toBeTrue();
   expect(ac.find((r) => r.id === "ac4")?.pass).toBeNull();
-  expect(ac).toHaveLength(13);
+  expect(ac).toHaveLength(14);
+});
+
+test("acResults: AC14 fails on mixed-kind trunks, double drops/rises, legend loss, missing payload", () => {
+  const by = (ac, id) => ac.find((r) => r.id === id)?.pass;
+  const mixed = acResults(
+    { ...healthyState, bundles: { ...healthyState.bundles, mixed: [0] } },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(mixed, "ac14")).toBeFalse();
+  expect(mixed.find((r) => r.id === "ac14")?.detail.mixed).toEqual([0]);
+  const double = acResults(
+    {
+      ...healthyState,
+      bundles: { ...healthyState.bundles, multiDrop: ["drop src.md@t0:140,180"] },
+    },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(double, "ac14")).toBeFalse();
+  expect(double.find((r) => r.id === "ac14")?.detail.multiDrop).toEqual(["drop src.md@t0:140,180"]);
+  const noLegend = acResults(
+    {
+      ...healthyState,
+      bundles: { ...healthyState.bundles, legend: { present: false, samples: 0 } },
+    },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(noLegend, "ac14")).toBeFalse();
+  const { bundles: _b, ...noBundles } = healthyState; // missing payload is a fail
+  expect(by(acResults(noBundles, healthyInteract, 204, 0), "ac14")).toBeFalse();
+  // a trunk-free corpus still needs the legend, but vacuously passes the rest
+  const noTrunks = acResults(
+    {
+      ...healthyState,
+      bundles: { legend: { present: true, samples: 3 }, trunkCount: 0, mixed: [], multiDrop: [] },
+    },
+    healthyInteract,
+    204,
+    0,
+  );
+  expect(by(noTrunks, "ac14")).toBeTrue();
 });
 
 test("acResults: overlapping card pairs fail AC9 with the pairs named", () => {
@@ -330,4 +382,7 @@ test("acResults: state eval carries the AC2/AC5/AC9/AC10/AC11 payloads the brows
   expect(AC_STATE_EVAL).toContain("onTrunk"); // AC11 piece semantics
   expect(AC_STATE_EVAL).toContain("cyclePairCount"); // AC7 unordered-pair dedupe
   expect(AC_STATE_EVAL).toContain("buses"); // AC13 bus detector payload
+  expect(AC_STATE_EVAL).toContain(".tsk-legend"); // AC14 legend payload
+  expect(AC_STATE_EVAL).toContain("multiDrop"); // AC14 shared-drop payload
+  expect(AC_STATE_EVAL).toContain("kindOf"); // AC13/AC14 per-kind grouping
 });

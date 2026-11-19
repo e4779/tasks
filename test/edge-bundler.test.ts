@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { bundleEdges } from "../web/edge-bundler.js";
+import { edgeId } from "../web/elk-adapter.js";
 
 type Pt = { x: number; y: number };
+type Rect = { x: number; y: number; w: number; h: number };
 const p = (x: number, y: number): Pt => ({ x, y });
 // V-H-V edge: vertical drop, horizontal run at y, vertical to target
 const vhv = (x0: number, xs: number, xe: number, y: number, y1: number): Pt[] => [
@@ -18,7 +20,7 @@ test("(a) three staggered x-overlapping tracks → ONE trunk at mean y, zero mem
     ["e3", vhv(300, 300, 450, 692, 900)], // track y=692 sits ON the mean
   ]);
   const { pieces, trunks } = bundleEdges(polylines);
-  expect(trunks).toEqual([{ y: 692, x0: 100, x1: 700 }]); // mean of 672/692/712, union x
+  expect(trunks).toEqual([{ kind: "", y: 692, x0: 100, x1: 700 }]); // mean of 672/692/712, union x
   // e1: prefix+stub / stub+suffix, collinear bend dropped
   expect(pieces.get("e1")).toEqual([
     [p(100, 100), p(100, 692)],
@@ -78,7 +80,76 @@ test("(d) deterministic under input permutation", () => {
   expect(JSON.stringify({ t: r2.trunks, p: [...r2.pieces].sort() })).toBe(
     JSON.stringify({ t: r1.trunks, p: [...r1.pieces].sort() }),
   );
-  expect(r2.trunks).toEqual([{ y: 692, x0: 100, x1: 700 }]);
+  expect(r2.trunks).toEqual([{ kind: "", y: 692, x0: 100, x1: 700 }]);
+});
+
+test("(e) per-kind grouping: soft run in a hard corridor stays identity, hard runs still bundle", () => {
+  const e1 = { from: "a.md", to: "b.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "d.md", kind: "soft" };
+  const e3 = { from: "e.md", to: "f.md", kind: "hard" };
+  const softPoly: Pt[] = vhv(400, 400, 700, 712, 900); // soft track, same corridor band
+  const polylines = new Map<string, Pt[]>([
+    [edgeId(e1), vhv(100, 100, 500, 672, 900)], // hard track
+    [edgeId(e2), softPoly],
+    [edgeId(e3), vhv(300, 300, 450, 692, 900)], // hard track ON the hard mean
+  ]);
+  const { trunks, pieces } = bundleEdges(polylines, [e1, e2, e3]);
+  expect(trunks).toEqual([{ kind: "hard", y: 682, x0: 100, x1: 500 }]); // mean of 672/692
+  // the soft run is a lone run of its kind → identity, never joins a hard trunk
+  expect(pieces.get(edgeId(e2))).toEqual([softPoly]);
+  expect(pieces.get(edgeId(e1))).toEqual([
+    [p(100, 100), p(100, 682)],
+    [p(500, 682), p(500, 900)],
+  ]);
+});
+
+test("(f) shared source + targets: stubs snap to card centres — one drop, N rises", () => {
+  const rect = (x: number, y: number): Rect => ({ x, y, w: 80, h: 26 });
+  const e1 = { from: "src.md", to: "t1.md", kind: "hard" };
+  const e2 = { from: "src.md", to: "t2.md", kind: "hard" };
+  const polylines = new Map<string, Pt[]>([
+    [edgeId(e1), vhv(100, 100, 500, 672, 900)], // elk fan attach x=100
+    [edgeId(e2), vhv(180, 180, 700, 712, 900)], // elk fan attach x=180
+  ]);
+  const rects = new Map<string, Rect>([
+    ["src.md", { x: 80, y: 74, w: 120, h: 26 }], // centre x = 140
+    ["t1.md", rect(460, 900)], // centre x = 500
+    ["t2.md", rect(660, 900)], // centre x = 700
+  ]);
+  const { trunks, pieces } = bundleEdges(polylines, [e1, e2], rects);
+  expect(trunks).toEqual([{ kind: "hard", y: 692, x0: 140, x1: 700 }]); // trunk starts at the drop
+  // identical source stubs overlap into ONE drop line at the card centre
+  expect(pieces.get(edgeId(e1))).toEqual([
+    [p(140, 100), p(140, 692)],
+    [p(500, 692), p(500, 900)],
+  ]);
+  expect(pieces.get(edgeId(e2))).toEqual([
+    [p(140, 100), p(140, 692)],
+    [p(700, 692), p(700, 900)],
+  ]);
+});
+
+test("(g) no snap when the prefix bends — orthogonality survives, elk x kept", () => {
+  const e1 = { from: "a.md", to: "b.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "d.md", kind: "hard" };
+  const poly = [p(100, 100), p(150, 100), p(150, 672), p(500, 672), p(500, 900)];
+  const rects = new Map<string, Rect>([
+    ["a.md", { x: 80, y: 74, w: 120, h: 26 }], // centre x = 140 ≠ prefix bend x
+  ]);
+  const { pieces, trunks } = bundleEdges(
+    new Map([
+      [edgeId(e1), poly],
+      [edgeId(e2), vhv(160, 160, 460, 682, 900)], // corridor mate
+    ]),
+    [e1, e2],
+    rects,
+  );
+  expect(trunks).toEqual([{ kind: "hard", y: 677, x0: 150, x1: 500 }]);
+  // prefix is a horizontal jog → no snap: stub keeps the elk bend x
+  expect(pieces.get(edgeId(e1))).toEqual([
+    [p(100, 100), p(150, 100), p(150, 677)],
+    [p(500, 677), p(500, 900)],
+  ]);
 });
 
 test("edge with two bundled runs splits into three pieces (H-V-H through two corridors)", () => {
@@ -90,8 +161,8 @@ test("edge with two bundled runs splits into three pieces (H-V-H through two cor
   ]);
   const { pieces, trunks } = bundleEdges(polylines);
   expect(trunks).toEqual([
-    { y: 105, x0: 50, x1: 150 },
-    { y: 305, x0: 150, x1: 250 },
+    { kind: "", y: 105, x0: 50, x1: 150 },
+    { kind: "", y: 305, x0: 150, x1: 250 },
   ]);
   expect(pieces.get("s")).toEqual([
     [p(50, 100), p(50, 105)],
