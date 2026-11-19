@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { basename, relative, resolve, sep } from "node:path";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
 import { DEFAULT_TERMINALS, loadConfig, terminalsOf } from "./config";
 import { discover } from "./discover";
@@ -159,11 +159,26 @@ export const startServer = (roots: string[], port: number, host = "127.0.0.1") =
           // same gray-matter split parse.ts runs, so parser and page agree on
           // the body; first ^# line dropped — it is the very line above shows as title
           const body = matter(source).content.replace(/^# .+\n?/m, "");
+          const next = nextUp(m.graph, terminalsOf(m.conf))[0];
+          // D3 trust pattern (same as the route itself): a blocked-by entry
+          // links only when it names a corpus member; everything else stays inert text
+          const linkOf = (raw: string): string | null => {
+            const target = resolve(dirname(abs), raw); // links resolve vs the doc's dir (parse.ts convention)
+            return m.files.includes(target) ? `/doc/${encodeURI(relOf(m.rs, target))}` : null;
+          };
           return html(
             page({
               active: "",
               title: `${title} — tsk`,
-              body: docPage({ title, html: renderMd(body), source }),
+              body: docPage({
+                title,
+                html: renderMd(body),
+                source,
+                status: r.ok ? r.v.status : null,
+                attrs: r.ok ? r.v.attrs : {},
+                linkOf,
+                next: next ? `/doc/${encodeURI(relOf(m.rs, next.path))}` : null,
+              }),
             }),
           );
         } catch {

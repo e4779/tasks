@@ -35,6 +35,7 @@ test("layout emits the wave C contract: nav links, both theme switches, dark def
     'action="/list"', // …pointing at the route
     'data-swap="main"', // opt-in marker for the future swap glue
     'id="theme"', // the 5-line toggle button
+    'localStorage.getItem("theme")', // D10: pre-paint inline boot (no light flash)
     "/main.js",
     "/style.css",
     'value="q&lt;x"', // task-derived input values are escaped

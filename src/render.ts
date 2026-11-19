@@ -56,7 +56,8 @@ export const page = ({
 <link rel="stylesheet" href="/vendor/shadows.min.css"/>
 <link rel="stylesheet" href="/vendor/easings.min.css"/>
 <link rel="stylesheet" href="/style.css"/>
-${zoom ? '<script src="/vendor/d3.min.js" defer></script>\n' : ""}<script src="/main.js" defer></script>
+${zoom ? '<script src="/vendor/d3.min.js" defer></script>\n' : ""}<script>if(localStorage.getItem("theme")==="light")document.documentElement.dataset.theme="light"</script>
+<script src="/main.js" defer></script>
 </head>
 <body${cls ? ` class="${cls}"` : ""}>
 <nav>
@@ -150,15 +151,57 @@ export const nextPage = (
       .join("\n"),
   });
 
-export const docPage = (doc: Readonly<{ title: string; html: string; source: string }>): string =>
-  `<a class="back" href="/list">← back</a>
-<div class="doc">
+// marginnote rows (D3): only the four pinned keys render; a blocked-by entry
+// becomes a /doc link only when the resolver names a corpus member. YAML dates
+// arrive as Date objects — ISO, not the noisy Date.toString
+const listOf = (v: unknown): readonly string[] => {
+  if (Array.isArray(v)) return v.map(String);
+  if (v === undefined || v === null || v === "") return [];
+  return [v instanceof Date ? v.toISOString().slice(0, 10) : String(v)];
+};
+
+const metaRow = (
+  label: string,
+  items: readonly string[],
+  linkOf: (raw: string) => string | null,
+): string =>
+  items.length === 0
+    ? ""
+    : `<div><span class="mm-label">${esc(label)}</span> ${items
+        .map((t) => {
+          const href = linkOf(t);
+          return href ? `<a href="${href}">${esc(t)}</a>` : `<span>${esc(t)}</span>`;
+        })
+        .join(", ")}</div>`;
+
+export const docPage = (
+  doc: Readonly<{
+    title: string;
+    html: string;
+    source: string;
+    next: string | null;
+    status: string | null;
+    attrs: Record<string, unknown>;
+    linkOf: (raw: string) => string | null;
+  }>,
+): string => {
+  const note = [
+    metaRow("status", doc.status === null ? [] : [doc.status], () => null),
+    metaRow("blocked-by", listOf(doc.attrs["blocked-by"]), doc.linkOf),
+    metaRow("tags", listOf(doc.attrs.tags), () => null),
+    metaRow("created_at", listOf(doc.attrs.created_at), () => null),
+  ].join("");
+  return `<a class="back" href="/list">← back</a>
 <h1 class="doc-title">${esc(doc.title)}</h1>
+<div class="doc">
 <article class="md">
 ${doc.html}
 </article>
 <details><summary>raw source</summary><pre>${esc(doc.source)}</pre></details>
+${doc.next ? `<a class="next" href="${doc.next}">next →</a>` : ""}
+${note === "" ? "" : `<aside class="marginnote">${note}</aside>`}
 </div>`;
+};
 
 export const notFoundBody = (what: string): string =>
   `<p class="path">no document in the current corpus for this path: ${esc(what)}</p>`;

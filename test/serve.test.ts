@@ -108,6 +108,18 @@ test("/doc page: frontmatter hidden, leading h1 skipped, md+wikilinks live, sour
   expect(html).toContain("<pre>---"); // raw source (frontmatter included) behind details
 });
 
+test("/doc D3+D8: marginnote carries status/blocked-by, resolves corpus members only, next → footer", async () => {
+  const blocked = await (await get("/doc/tasks/blocked-card.md")).text();
+  expect(blocked).toContain('<aside class="marginnote">');
+  expect(blocked).toContain('<span class="mm-label">status</span> <span>pending</span>');
+  expect(blocked).toContain('href="/doc/tasks/normal-card.md"'); // corpus member → live /doc link
+  expect(blocked).toContain(">./missing-dep.md<"); // not in the corpus → inert text
+  expect(blocked.slice(blocked.indexOf("<aside"))).not.toContain("priority"); // only the four pinned keys render
+  const normal = await (await get("/doc/tasks/normal-card.md")).text();
+  // cyclic-a/b and blocked-card are blocked, completed is done → nextUp[0] = no-h1
+  expect(normal).toContain('<a class="next" href="/doc/tasks/no-h1.md">next →</a>');
+});
+
 test("/doc escaping: task-derived text never reaches the page raw", async () => {
   const html = await (await get("/doc/tasks/normal-card.md")).text();
   expect(html).not.toMatch(/<script>alert/);

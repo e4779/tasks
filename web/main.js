@@ -1,7 +1,7 @@
 // The COMPLETE client surface after wave C: a theme toggle (persisted) and
 // d3-zoom over the static server SVG — everything else is server-rendered.
+// stored theme already applied pre-paint by the inline head script (src/render.ts)
 const root = document.documentElement;
-if (localStorage.getItem("theme") === "light") root.dataset.theme = "light";
 document.getElementById("theme")?.addEventListener("click", () => {
   root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
   localStorage.setItem("theme", root.dataset.theme);

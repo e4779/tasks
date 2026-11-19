@@ -32,6 +32,24 @@ test("checkboxes render static: disabled inputs, [x] checked, never mutable", ()
   expect(html.match(/<input/g)?.length).toBe(3);
 });
 
+test("D7 permalinks: h2/h3 get unicode slug ids + ¶ anchors; h1/h4 untouched", () => {
+  const html = renderMd("## Hello World\n\n### a.  b?\n\n# top\n\n#### deep\n\n## Привет мир");
+  expect(html).toContain(
+    '<h2 id="hello-world"><a class="anchor" href="#hello-world">¶</a>Hello World</h2>',
+  );
+  expect(html).toContain('<h3 id="a-b"><a class="anchor" href="#a-b">¶</a>a.  b?</h3>');
+  expect(html).toContain('<h2 id="привет-мир"><a class="anchor" href="#привет-мир">¶</a>');
+  expect(html).not.toContain("<h1 id=");
+  expect(html).not.toContain("<h4 id=");
+  // raw html in the source escapes to text (html:false); the id attr only ever
+  // carries slug-safe charset — quotes/tags can never break out of it
+  const ids = [
+    ...renderMd('## <b>bold</b> "quoted" & <script>x</script>').matchAll(/id="([^"]+)"/g),
+  ];
+  expect(ids.length).toBeGreaterThan(0);
+  for (const [, id] of ids) expect(id).toMatch(/^[\p{L}\p{N}-]+$/u);
+});
+
 test("code fences: the wikify pass rewrites them too (parse.ts-carried shortcut), but they stay text", () => {
   const html = renderMd("```\n[[not-a-link]]\n```");
   expect(html).toContain("[not-a-link](./not-a-link.md)"); // visible rewritten text inside the fence

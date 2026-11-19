@@ -20,4 +20,19 @@ const checkboxes = (html: string): string =>
       `<li><input type="checkbox" disabled="disabled"${c === " " ? "" : ' checked="checked"'}/> `,
   );
 
-export const renderMd = (body: string): string => checkboxes(md.render(wikify(body)));
+// D7 permalinks: h2/h3 get a unicode slug id + hover-revealed ¶ anchor.
+// shortcut: duplicate headings collide on the id, upgrade when corpora repeat titles
+const slugify = (s: string): string =>
+  s
+    .replace(/<[^>]+>/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "") || "section";
+
+const permalinks = (html: string): string =>
+  html.replace(/<h([23])>([\s\S]*?)<\/h\1>/g, (_m, lvl: string, inner: string) => {
+    const id = slugify(inner);
+    return `<h${lvl} id="${id}"><a class="anchor" href="#${id}">¶</a>${inner}</h${lvl}>`;
+  });
+
+export const renderMd = (body: string): string => permalinks(checkboxes(md.render(wikify(body))));

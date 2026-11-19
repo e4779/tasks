@@ -76,23 +76,24 @@ button[data-chip] {
     border-color 0.2s var(--ease-2);
 }
 button[data-chip][aria-pressed="true"] {
-  color: var(--surface-1);
+  color: var(--text-1);
 }
+/* D1 dark chips: deep step-9 fills — calm pills, not neon */
 button[data-chip="pending"][aria-pressed="true"] {
-  background: var(--orange-6);
-  border-color: var(--orange-6);
+  background: var(--orange-9);
+  border-color: var(--orange-9);
 }
 button[data-chip="in-progress"][aria-pressed="true"] {
-  background: var(--blue-6);
-  border-color: var(--blue-6);
+  background: var(--blue-9);
+  border-color: var(--blue-9);
 }
 button[data-chip="done"][aria-pressed="true"] {
-  background: var(--green-6);
-  border-color: var(--green-6);
+  background: var(--green-9);
+  border-color: var(--green-9);
 }
 button[data-chip="cancelled"][aria-pressed="true"] {
-  background: var(--red-6);
-  border-color: var(--red-6);
+  background: var(--red-9);
+  border-color: var(--red-9);
 }
 main {
   padding: 0 var(--size-3) var(--size-6);
@@ -123,17 +124,19 @@ tbody a:hover {
   font-size: 0.85em;
   word-break: break-all;
 }
+/* D1: on-dark status text needs lightness AND low chroma — compose the ramp
+   toward the light gray (steps alone are either neon or illegibly dark) */
 .st.pending {
-  color: var(--orange-6);
+  color: color-mix(in srgb, var(--orange-6) 55%, var(--gray-4));
 }
 .st.in-progress {
-  color: var(--blue-6);
+  color: color-mix(in srgb, var(--blue-6) 55%, var(--gray-4));
 }
 .st.done {
-  color: var(--green-6);
+  color: color-mix(in srgb, var(--green-6) 55%, var(--gray-4));
 }
 .st.cancelled {
-  color: var(--red-6);
+  color: color-mix(in srgb, var(--red-6) 55%, var(--gray-4));
   text-decoration: line-through;
 }
 .st.none {
@@ -176,21 +179,21 @@ tbody a:hover {
   stroke: var(--gray-6);
 }
 .tsk-graph .edge.trunk.hard {
-  stroke: var(--blue-5);
+  stroke: color-mix(in srgb, var(--blue-5) 65%, var(--gray-5));
 }
 .tsk-graph .edge.trunk.soft {
-  stroke: var(--gray-7);
+  stroke: var(--gray-6);
   stroke-dasharray: 5 4;
 }
 .tsk-graph .edge.trunk.cycle {
-  stroke: var(--red-6);
+  stroke: color-mix(in srgb, var(--red-6) 65%, var(--gray-5));
   stroke-dasharray: none;
 }
 .tsk-graph .edge.hard {
-  stroke: var(--blue-5);
+  stroke: color-mix(in srgb, var(--blue-5) 65%, var(--gray-5));
 }
 .tsk-graph .edge.soft {
-  stroke: var(--gray-7);
+  stroke: var(--gray-6);
   stroke-dasharray: 5 4;
 }
 .tsk-graph .edge.broken {
@@ -198,7 +201,7 @@ tbody a:hover {
   stroke-dasharray: 2 4;
 }
 .tsk-graph .edge.cycle {
-  stroke: var(--red-6);
+  stroke: color-mix(in srgb, var(--red-6) 65%, var(--gray-5));
   stroke-dasharray: none;
 }
 .tsk-graph .tsk-legend {
@@ -241,19 +244,19 @@ tbody a:hover {
   fill: var(--gray-6);
 }
 .tsk-graph .card.st-pending .bar {
-  fill: var(--orange-6);
+  fill: color-mix(in srgb, var(--orange-6) 55%, var(--gray-6));
 }
 .tsk-graph .card.st-in-progress .bar {
-  fill: var(--blue-6);
+  fill: color-mix(in srgb, var(--blue-6) 55%, var(--gray-6));
 }
 .tsk-graph .card.st-done .bar {
-  fill: var(--green-6);
+  fill: color-mix(in srgb, var(--green-6) 55%, var(--gray-6));
 }
 .tsk-graph .card.st-cancelled .bar {
-  fill: var(--red-6);
+  fill: color-mix(in srgb, var(--red-6) 55%, var(--gray-6));
 }
 .tsk-graph .card.st-blocked .bar {
-  fill: var(--indigo-6);
+  fill: color-mix(in srgb, var(--indigo-6) 55%, var(--gray-6));
 }
 .tsk-graph .card.st-none .bar {
   fill: var(--gray-6);
@@ -276,15 +279,33 @@ tbody a:hover {
   color: var(--text-2);
   font-size: 1rem;
 }
-.doc {
-  max-width: 75ch;
-  margin-inline: auto;
-}
-.doc .back {
+/* D4: the h1 sits OUTSIDE .doc (structural breakout, full main width) —
+   .doc is the reading column only; grid so D3's marginnote can ride a rail */
+a.back {
   display: inline-block;
   padding: var(--size-3) 0;
   color: var(--text-2);
   text-decoration: none;
+}
+.doc-title {
+  color: var(--text-1);
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: var(--size-2) 0 var(--size-3);
+  /* D4: normalize.min.css clamps :where(h1) max-inline-size — title breaks out full-width */
+  max-inline-size: none;
+}
+.doc {
+  display: grid;
+  grid-template-columns: minmax(0, 75ch);
+  justify-content: center;
+  align-content: start;
+  column-gap: var(--size-6);
+}
+/* auto-placement quirk: explicitly-placed aside pulled a later auto child into
+   the rail — pin every child to column 1, the aside overrides */
+.doc > * {
+  grid-column: 1;
 }
 .doc pre {
   white-space: pre-wrap;
@@ -293,12 +314,40 @@ tbody a:hover {
   border-radius: 8px;
   padding: var(--size-3);
   box-shadow: var(--shadow-2);
+  /* D6 breakout: wider than the column, centered on it (100% = the grid track);
+     normalize.min.css clamps :where(pre) to max-content — override it */
+  width: min(1200px, 92vw);
+  max-inline-size: none;
+  margin-inline: calc((100% - min(1200px, 92vw)) / 2);
 }
-.doc .doc-title {
+.marginnote {
+  grid-column: 1;
+  margin-top: var(--size-5);
+  color: var(--text-2);
+  font-size: 0.85rem;
+}
+.marginnote a {
+  color: var(--text-2);
+}
+a.next {
+  margin-top: var(--size-5);
   color: var(--text-1);
-  font-size: 1.75rem;
-  font-weight: 600;
-  margin: var(--size-2) 0 var(--size-3);
+  text-decoration: none;
+}
+a.next:hover {
+  text-decoration: underline;
+}
+/* D3 rail: ~240px marginnote column at ≥1280px; below it the aside is a
+   grid-column:1 auto row — stacks under the content */
+@media (min-width: 1280px) {
+  .doc {
+    grid-template-columns: minmax(0, 75ch) 15rem;
+  }
+  .marginnote {
+    grid-column: 2;
+    grid-row: 1;
+    margin-top: 0;
+  }
 }
 .doc .md h1,
 .doc .md h2,
@@ -306,6 +355,9 @@ tbody a:hover {
   color: var(--text-1);
   margin: var(--size-4) 0 var(--size-2);
   line-height: 1.25;
+  /* normalize.min.css clamps body headings to --size-header-2/3 (25/35ch) —
+     they wrap absurdly early inside the 75ch column; run them full measure */
+  max-inline-size: none;
 }
 .doc .md h1 {
   font-size: 1.4rem;
@@ -322,17 +374,36 @@ tbody a:hover {
 .doc .md ul,
 .doc .md ol {
   margin: var(--size-2) 0;
-  padding-left: var(--size-5);
+  padding-left: 0;
+  list-style-position: outside;
+}
+.doc .md ul ul {
+  margin-left: 1rem;
 }
 .doc .md li {
   margin: var(--size-1) 0;
 }
+.doc .md li::marker {
+  color: var(--text-2);
+}
+.doc .md h2 a.anchor,
+.doc .md h3 a.anchor {
+  color: var(--text-2);
+  text-decoration: none;
+  margin-right: var(--size-1);
+  visibility: hidden;
+}
+.doc .md h2:hover a.anchor,
+.doc .md h3:hover a.anchor {
+  visibility: visible;
+}
 .doc .md li > input[type="checkbox"] {
   margin-right: var(--size-2);
-  accent-color: var(--blue-6);
+  /* D1: fixed ramp steps composed toward the theme gray — calm in dark, no raw hex */
+  accent-color: color-mix(in srgb, var(--blue-6) 65%, var(--gray-4));
 }
 .doc .md a {
-  color: var(--blue-4);
+  color: color-mix(in srgb, var(--blue-4) 60%, var(--gray-4));
 }
 .doc .md :not(pre) > code {
   background: var(--surface-2);
@@ -353,21 +424,26 @@ tbody a:hover {
 /* light theme: the switch files flip surface/text vars, but the ~15 fixed
    ramp steps below would fail on light (step-6 text on white ≈ 2.9:1,
    gray-7 edges invisible) — higher steps for text (~-9), ~-8/-7 for fills */
+/* light chips: same deep fills, white text (text-1 would be near-black here) */
 [data-theme="light"] button[data-chip="pending"][aria-pressed="true"] {
   background: var(--orange-9);
   border-color: var(--orange-9);
+  color: var(--surface-1);
 }
 [data-theme="light"] button[data-chip="in-progress"][aria-pressed="true"] {
   background: var(--blue-9);
   border-color: var(--blue-9);
+  color: var(--surface-1);
 }
 [data-theme="light"] button[data-chip="done"][aria-pressed="true"] {
   background: var(--green-9);
   border-color: var(--green-9);
+  color: var(--surface-1);
 }
 [data-theme="light"] button[data-chip="cancelled"][aria-pressed="true"] {
   background: var(--red-9);
   border-color: var(--red-9);
+  color: var(--surface-1);
 }
 [data-theme="light"] .st.pending {
   color: var(--orange-9);
