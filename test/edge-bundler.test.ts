@@ -152,6 +152,43 @@ test("(g) no snap when the prefix bends — orthogonality survives, elk x kept",
   ]);
 });
 
+test("(h) snapped target stub consumes the pure-vertical suffix — no border jog", () => {
+  // elk ends each edge straight on the wide target's bottom border at its own
+  // x; the snapped centre stub REPLACES that vertical, so nothing of the old
+  // suffix may survive (else a horizontal jogs along the target border)
+  const e1 = { from: "a.md", to: "wide.md", kind: "hard" };
+  const e2 = { from: "b.md", to: "wide.md", kind: "hard" };
+  const polylines = new Map<string, Pt[]>([
+    [edgeId(e1), [p(100, 742), p(100, 712), p(640, 712), p(640, 632)]],
+    [edgeId(e2), [p(300, 742), p(300, 692), p(760, 692), p(760, 632)]],
+  ]);
+  const rects = new Map<string, Rect>([
+    ["a.md", { x: 60, y: 742, w: 80, h: 26 }], // centre x = 100
+    ["b.md", { x: 260, y: 742, w: 80, h: 26 }], // centre x = 300
+    ["wide.md", { x: 500, y: 606, w: 400, h: 26 }], // centre x = 700, border y = 632
+  ]);
+  const { trunks, pieces } = bundleEdges(polylines, [e1, e2], rects);
+  expect(trunks).toEqual([{ kind: "hard", y: 702, x0: 100, x1: 700 }]);
+  // both members rise at the target centre — and NOTHING else: the replaced
+  // elk suffix (its old attach x) must not leak back as a border horizontal
+  expect(pieces.get(edgeId(e1))).toEqual([
+    [p(100, 742), p(100, 702)],
+    [p(700, 702), p(700, 632)],
+  ]);
+  expect(pieces.get(edgeId(e2))).toEqual([
+    [p(300, 742), p(300, 702)],
+    [p(700, 702), p(700, 632)],
+  ]);
+  for (const [id, ps] of pieces)
+    for (const poly of ps)
+      for (let i = 0; i + 1 < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[i + 1];
+        if (!a || !b) continue;
+        expect(Math.abs(a.y - b.y), `${id} horizontal at ${i}`).toBeGreaterThan(0);
+      }
+});
+
 test("edge with two bundled runs splits into three pieces (H-V-H through two corridors)", () => {
   const polylines = new Map<string, Pt[]>([
     // H-V-H: run1 y=100 x 50→150, vertical, run2 y=300 x 150→250

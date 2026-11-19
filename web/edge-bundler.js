@@ -129,6 +129,7 @@ const rewrite = (poly, runs) => {
       { x: run.tx, y: run.ey }, // target stub; the run end point is consumed here
     ];
     k = run.j;
+    if (run.snapT) k = poly.length - 1; // snapped target: the stub REPLACED the pure-vertical suffix — consume it, or the old attach x leaks back as a border jog
   }
   out.push(cur);
   return out.map(clean).filter((p) => p.length >= 2);
@@ -204,6 +205,7 @@ export const bundleEdges = (polylines, edges = [], rects = new Map()) => {
           ey: r.ey,
           ty: t.y,
           snapS: r.snapS,
+          snapT: r.snapT,
         });
       }
     mine.sort((a, b) => a.i - b.i);

@@ -153,9 +153,10 @@ export const AC_STATE_EVAL = `(() => {
     .filter((g) => g.length > 1)
     .map((g) => g.map((s) => Math.round(s.y) + ':' + Math.round(s.x0) + '→' + Math.round(s.x1)));
   // AC14 per-kind bundles + shared drops + legend: member stubs per trunk
-  // share ONE kind; per (source card, trunk) exactly one drop x and per
-  // (target card, trunk) exactly one rise x (card-centre snapping); legend
-  // box with three samples lives on the graph view
+  // share ONE kind; per (source card, trunk) exactly one drop x (centre
+  // snapping) and per EDGE exactly one rise x — several relations may attach
+  // along one wide target border, each at its own x; legend box with three
+  // samples lives on the graph view
   const legendEl = g.querySelector('.tsk-legend');
   const members = trunkSegs.map(() => ({ kinds: new Set(), drops: new Map(), rises: new Map() }));
   for (const { el: p, poly } of piecePolys) {
@@ -170,9 +171,10 @@ export const AC_STATE_EVAL = `(() => {
       const fr = byPath.get(String(p.dataset.from));
       const to = byPath.get(String(p.dataset.to));
       const put = (map, id, pt) => map.set(id, [...(map.get(id) ?? []), Math.round(pt.x)]);
+      const ek = short(p.dataset.from) + '→' + short(p.dataset.to); // per-edge rise key
       for (const pt of free) {
         if (fr && cards.pointOnRect(pt, fr, 1)) put(m.drops, String(p.dataset.from), pt);
-        if (to && cards.pointOnRect(pt, to, 1)) put(m.rises, String(p.dataset.to), pt);
+        if (to && cards.pointOnRect(pt, to, 1)) put(m.rises, ek, pt);
       }
     }
   }
@@ -452,9 +454,10 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
     {
       id: "ac14",
       name: "bundle-homogeneity+legend",
-      // per-kind trunks: member stubs of one trunk share ONE kind; card-centre
-      // snapping gives one drop/rise x per (card, trunk); legend present with
-      // three samples. Missing payload is a fail, same contract as ac9-ac13
+      // per-kind trunks: member stubs of one trunk share ONE kind; one drop x
+      // per (source card, trunk) and one rise x per EDGE (wide targets host
+      // several rises at different x); legend present with three samples.
+      // Missing payload is a fail, same contract as ac9-ac13
       pass:
         !fatal &&
         !!state?.bundles &&

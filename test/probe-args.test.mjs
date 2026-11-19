@@ -122,14 +122,23 @@ test("acResults: AC14 fails on mixed-kind trunks, double drops/rises, legend los
   const double = acResults(
     {
       ...healthyState,
-      bundles: { ...healthyState.bundles, multiDrop: ["drop src.md@t0:140,180"] },
+      bundles: {
+        ...healthyState.bundles,
+        multiDrop: [
+          "drop src.md@t0:140,180",
+          "rise a.md→b.md@t1:5560,5490", // per-edge: ONE x per edge, so two x's = defect
+        ],
+      },
     },
     healthyInteract,
     204,
     0,
   );
   expect(by(double, "ac14")).toBeFalse();
-  expect(double.find((r) => r.id === "ac14")?.detail.multiDrop).toEqual(["drop src.md@t0:140,180"]);
+  expect(double.find((r) => r.id === "ac14")?.detail.multiDrop).toEqual([
+    "drop src.md@t0:140,180",
+    "rise a.md→b.md@t1:5560,5490",
+  ]);
   const noLegend = acResults(
     {
       ...healthyState,
@@ -384,5 +393,6 @@ test("acResults: state eval carries the AC2/AC5/AC9/AC10/AC11 payloads the brows
   expect(AC_STATE_EVAL).toContain("buses"); // AC13 bus detector payload
   expect(AC_STATE_EVAL).toContain(".tsk-legend"); // AC14 legend payload
   expect(AC_STATE_EVAL).toContain("multiDrop"); // AC14 shared-drop payload
+  expect(AC_STATE_EVAL).toContain("per-edge rise key"); // AC14 per-EDGE rise uniqueness
   expect(AC_STATE_EVAL).toContain("kindOf"); // AC13/AC14 per-kind grouping
 });
