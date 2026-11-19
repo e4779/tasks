@@ -62,7 +62,12 @@ test("unknown keys warn and are ignored; known keys in the same file survive", (
   const orig = console.error;
   console.error = (m: string) => errs.push(m);
   try {
-    expect(loadConfig([join(CFG, "unknown")])).toEqual({ statuses: "pending, done" });
+    const conf = loadConfig([join(CFG, "unknown")]);
+    // key-level assert: ancestors' keys (repo-root .tsk.conf discover since
+    // f3b244d) correctly cascade DOWN into this chain — deep-equality would
+    // wrongly assume a child dir has no ancestors
+    expect(conf.statuses).toBe("pending, done");
+    expect(Object.keys(conf)).not.toContain("bogus");
   } finally {
     console.error = orig;
   }

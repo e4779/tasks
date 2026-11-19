@@ -2,8 +2,13 @@
 // the viewer draws ONE line per relation (AC7).
 // 1. same-direction parallels (soft+hard between one ordered pair) collapse
 //    to the strongest kind — hard > soft
-// 2. edges in BOTH directions between an unordered pair (2-cycle) collapse
-//    to ONE edge kind "cycle" — red solid, no direction semantics
+// 2. hard edges in BOTH directions between a pair = a genuine deadlock →
+//    ONE edge kind "cycle" — red solid, no direction semantics (ac7)
+// 3. SOFT edges in both directions are NOT a cycle: mutual mentions are one
+//    undirected soft relation — the strongest soft wins, stays dashed gray.
+//    A red cycle must not be born from prose mentions (operator, 2026-11-19:
+//    package-publication ↔ ponytail-user-level cross-links painted as a
+//    "cycle" while neither card blocks the other)
 
 /** @typedef {Readonly<{from: string, to: string, kind: string}>} Edge */
 
@@ -23,11 +28,38 @@ export const mergeEdges = (edges) => {
     if (!prev || (RANK[e.kind] ?? 0) > (RANK[prev.kind] ?? 0)) dir.set(k, e);
   }
   const out = [];
+  const emitted = new Set(); // directional keys already merged into an output edge
   for (const e of dir.values()) {
-    // a self-loop's reverse key is itself: it must pass through untouched
-    const mutual = e.from !== e.to && dir.has(`${e.to}\t${e.from}`);
-    if (!mutual) out.push(e);
-    else if (e.from < e.to) out.push({ from: e.from, to: e.to, kind: "cycle" });
+    if (emitted.has(`${e.from}\t${e.to}`)) continue;
+    const rev = dir.get(`${e.to}\t${e.from}`); // strongest opposite-direction edge
+    const selfLoop = e.from === e.to;
+    // cycle only when HARD points both ways — a soft-only mutual pair is a
+    // bidirectional mention, not a deadlock
+    if (!selfLoop && rev && e.kind === "hard" && rev.kind === "hard") {
+      const [a, b] = e.from < e.to ? [e, rev] : [rev, e];
+      out.push({ from: a.from, to: a.to, kind: "cycle" });
+      emitted.add(`${a.from}\t${a.to}`);
+      emitted.add(`${b.from}\t${b.to}`);
+      continue;
+    }
+    if (!selfLoop && rev) {
+      // mutual with at least one hard: the hard direction wins outright
+      const hard = e.kind === "hard" ? e : rev.kind === "hard" ? rev : null;
+      if (hard) {
+        out.push(hard);
+        emitted.add(`${hard.from}\t${hard.to}`);
+        emitted.add(`${hard.to}\t${hard.from}`);
+        continue;
+      }
+      // soft+soft mutual: one undirected soft, emitted at the smaller slot
+      const [a, b] = e.from < e.to ? [e, rev] : [rev, e];
+      out.push({ from: a.from, to: a.to, kind: "soft" });
+      emitted.add(`${a.from}\t${a.to}`);
+      emitted.add(`${b.from}\t${b.to}`);
+      continue;
+    }
+    out.push(e);
+    emitted.add(`${e.from}\t${e.to}`);
   }
   return out;
 };

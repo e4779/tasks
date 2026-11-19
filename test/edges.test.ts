@@ -19,9 +19,11 @@ test("mutual pair collapses 4→1 undirected cycle edge", () => {
   expect(mergeEdges(edges)).toEqual([{ from: "a", to: "b", kind: "cycle" }]);
 });
 
-test("mutual pair with reversed input order still yields the canonical cycle edge", () => {
+test("reversed input order: hard direction wins regardless of order", () => {
   const edges = [e("b", "a", "soft"), e("b", "a", "hard"), e("a", "b", "soft")];
-  expect(mergeEdges(edges)).toEqual([{ from: "a", to: "b", kind: "cycle" }]);
+  // one hard (b→a) + opposite soft mention (a→b): the hard wins; soft
+  // parallel (b→a soft) collapses into it. Deterministic for any order.
+  expect(mergeEdges(edges)).toEqual([e("b", "a", "hard")]);
 });
 
 test("same-direction parallels collapse to the strongest kind (hard > soft)", () => {
@@ -40,7 +42,7 @@ test("self-loop passes through (its reverse key is itself)", () => {
   expect(mergeEdges([self])).toEqual([self]);
 });
 
-test("stable order: survivors keep first-occurrence slots, cycle emits once", () => {
+test("stable order: hard wins over opposite soft, hard+hard mutual → cycle once", () => {
   const edges = [
     e("c", "d", "hard"),
     e("a", "b", "soft"),
@@ -48,9 +50,12 @@ test("stable order: survivors keep first-occurrence slots, cycle emits once", ()
     e("d", "c", "soft"),
     e("x", "y", "hard"),
   ];
+  // c→d hard + d→c soft: the hard direction wins (soft absorbed — mention,
+  // not gate). a→b soft + b→a hard: b→a hard wins outright. No cycles are
+  // born from soft mentions (operator 2026-11-19).
   expect(mergeEdges(edges)).toEqual([
-    { from: "c", to: "d", kind: "cycle" }, // c→d slot (c<d canonical)
-    { from: "a", to: "b", kind: "cycle" }, // a→b slot
+    e("c", "d", "hard"),
+    e("b", "a", "hard"),
     e("x", "y", "hard"),
   ]);
 });
@@ -68,4 +73,38 @@ test("fixture corpus: exactly one cycle edge between the cyclic pair, nothing el
   );
   expect(between).toEqual([{ from: a, to: b, kind: "cycle" }]); // a<b: canonical direction
   expect(merged).toHaveLength(5); // 4 pair lines → 1, plus the 4 unrelated edges
+});
+
+test("mutual soft pairs are mentions, not cycles (operator 2026-11-19)", () => {
+  const pk = "package-publication.md";
+  const pu = "ponytail-user-level.md";
+  const merged = mergeEdges([
+    { from: pk, to: pu, kind: "soft" },
+    { from: pu, to: pk, kind: "soft" },
+  ]);
+  expect(merged).toHaveLength(1);
+  expect(merged[0]?.kind).toBe("soft");
+});
+test("hard mutual still yields exactly one cycle (ac7 contract)", () => {
+  const merged = mergeEdges([
+    { from: "a.md", to: "b.md", kind: "hard" },
+    { from: "b.md", to: "a.md", kind: "hard" },
+  ]);
+  expect(merged).toHaveLength(1);
+  expect(merged[0]?.kind).toBe("cycle");
+});
+test("hard + opposite soft: the hard direction wins outright", () => {
+  const merged = mergeEdges([
+    { from: "a.md", to: "b.md", kind: "hard" },
+    { from: "b.md", to: "a.md", kind: "soft" },
+  ]);
+  expect(merged).toHaveLength(1);
+  expect(merged[0]?.from).toBe("a.md");
+  expect(merged[0]?.to).toBe("b.md");
+  expect(merged[0]?.kind).toBe("hard");
+});
+test("plain single edges still pass through untouched", () => {
+  const merged = mergeEdges([{ from: "x.md", to: "y.md", kind: "soft" }]);
+  expect(merged).toHaveLength(1);
+  expect(merged[0]?.kind).toBe("soft");
 });
