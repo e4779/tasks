@@ -75,33 +75,52 @@ this card intentionally does NOT pre-decompose.
 
 ## Checklist
 
-- [ ] `src/serve.ts` VENDOR map + `web/index.html`: add
-      `theme.light.switch.min.css` (constant map entry + `<link>`, same
-      pattern as the dark file); remove/replace the hardcoded
-      `:root { color-scheme: dark }` so `color-scheme` follows the active
-      theme (the switch files already set it per theme).
-- [ ] Theme toggle in the header (`web/index.html` + `web/app.js`): a
-      button in/next to `<nav>` flips `data-theme` on `<html>`; choice in
-      localStorage; a tiny pre-paint inline script in `<head>` applies the
-      stored theme on boot (default dark when unset) — no light flash;
-      `data-theme="dark"` stays the default attribute in the served HTML
-      (web-tokens test pins it).
-- [ ] Doc route drops the filter bar (`web/app.js`): search box + chips
-      absent on `/doc/*` (post-routes shell; do not render them for the
-      doc view); list/next/graph keep them working unchanged.
-- [ ] Doc page layout (`web/index.html` + `web/doc.js`): content column
-      centered (`margin-inline: auto`) with `max-width` ~65–75ch; title
-      becomes `el("h1", …)` styled as the largest type on the page
-      (rem scale; body `.md h1` tuned down so the page title wins);
-      back-link stays above the column.
-- [ ] Chips desaturated for dark (`web/index.html`): active chip hues
-      move from step-6 ramps to low-chroma picks (higher ramp steps /
-      `-hsl` variants — executor's eye decides); five statuses remain
-      distinguishable; vendored tokens only (no raw hex — AC8).
+Re-based 2026-11-19 onto the post-wave-C files (see the reality-check map
+above); ✅ = already landed by wave C / the operator pass, verify only.
+
+- [x] ✅ Light theme plumbing (D10, D1): `theme.light.switch.min.css` in
+      the VENDOR map (`src/serve.ts`) + `<link>` in the shell
+      (`src/render.ts`); hardcoded `:root { color-scheme: dark }` gone;
+      switch files set `color-scheme` per theme.
+- [x] ✅ Filter bar drop on doc (baked scope 3): `page({filters = ""})`
+      and the doc route passes none; list/next/graph keep theirs.
+- [x] ✅ Real title (baked scope 2) + centered column (baked scope 1):
+      `docPage()` renders `<h1 class="doc-title">` (1.75rem, largest on
+      the page; body `.md h1` tuned down to 1.4rem); `.doc` centered at
+      75ch; back-link above.
+- [x] ✅ Fonts (D2): system sans + `ui-monospace` for paths/ids/code,
+      no serif — conforming in `web/style.css`; standing bar only.
+- [ ] D4 title breakout: move `<h1 class="doc-title">` BEFORE the
+      `.doc` div in `docPage()` (`src/render.ts`) — full-width title,
+      the column div wraps only article + details; back-link above.
+- [ ] D3 marginnotes: `<aside class="marginnote">` in `docPage()`
+      (`src/render.ts`) from frontmatter attrs (status; blocked-by
+      resolved to `/doc/…` links; tags/created_at when present) + grid
+      css in `web/style.css` (main + ~240px rail at ≥1280px viewport,
+      stacked below on narrower) + `--text-2` / 0.85rem / no-border
+      styling; raw source keeps `<details>`.
+- [ ] D5+D6 doc css pass (`web/style.css`): lists — outside markers,
+      `padding-left: 0`, nested `ul` `margin-left: 1rem`, `::marker`
+      tinted `--text-2`; pre breakout to ~1200px max, centered.
+- [ ] D1 token desat in BOTH themes (`web/style.css`): dark chips off
+      step-6 (five statuses) + fold in the fixed accents (`.md a`,
+      checkbox `accent-color`, status bars, edges); light stays neutral
+      gray (no cream); vendored tokens only (AC8).
+- [ ] D7 permalinks: `src/markdown.ts` — h2/h3 get `id` + `¶` anchor
+      link, hover-revealed, `--text-2`.
+- [ ] D8 next-link: `/doc` handler computes `nextUp` (`src/serve.ts`,
+      `m` in scope) and `docPage()` renders a `next →` footer link to
+      `nextUp[0]`, only when non-empty.
+- [ ] D10 no-flash boot: tiny pre-paint inline script in the shell head
+      (`src/render.ts`) applies the stored theme before first paint
+      (`web/main.js` stays `defer`); `data-theme="dark"` default and
+      the seven vendor links stay pinned (`test/web-tokens.test.ts`).
 - [ ] Verify: `bun test` + `bun run check:full` green; probe `--ac`
-      matrix green on the fixtures corpus; wide-viewport screenshots of
-      the doc page (light AND dark) captured as handoff evidence for the
-      designer subagent.
+      green on the fixtures corpus; wide-viewport doc screenshots in
+      light AND dark (marginnote rail, full-width title, pre breakout,
+      desaturated chips in both themes) as handoff evidence.
+
+D9 has no checklist item by design — explicit non-goal.
 
 ## Acceptance criteria
 
@@ -213,6 +232,15 @@ Reviewed 2026-11-19, dark theme, all four routes at 1562x547 + 1920x1080
   step-6 bg fails. The toggle needs a small `[data-theme=light]` remap
   (higher steps: ~-9/-11 for text, ~-8/-9 for fills) or light mode ships
   half-broken.
+- **RESOLVED (final rulings 2026-11-19)** — wave C already ships the
+  `[data-theme=light]` remap (`web/style.css`, ≥10 blocks, pinned by
+  `test/web-tokens.test.ts`) plus the light switch VENDOR entry + `<link>`
+  (`src/serve.ts`, `src/render.ts`). The palette *direction* is now final
+  in **Design decisions (final, 2026-11-19)** below: light theme =
+  neutral Open Props grays, NO cream (D1); desaturated chip/accent steps
+  in BOTH themes (D1); serif never enters the viewer (D2); toggle
+  mechanics unchanged — only the no-flash inline head script is still
+  missing (D10).
 
 ### Vision-unsure
 
@@ -239,6 +267,144 @@ Reviewed 2026-11-19, dark theme, all four routes at 1562x547 + 1920x1080
    affordance/status/count, list measure cap + path shortening —
    `web/index.html`, `web/list.js`, `web/next.js`, `web/app.js`.
 
+## Design decisions (final, 2026-11-19)
+
+Operator + parent session rulings; they layer ON TOP of baked scope 1-6
+above and win where earlier drafts in this card disagree (e.g. the
+theme-toggle pre-work's remap sketch). D9 names the one explicit
+non-goal. The checklist below carries the D-numbers. ACs for D3-D8 land
+with the post-review decomposition pass, not here (this card still does
+not pre-decompose).
+
+### Reality check — file map after wave C
+
+Wave C landed AFTER the review above was written (commit 4799766:
+server-rendered pages — SPA shell, `/api` layer and client markdown
+deleted). The older sections reference pre-wave-C files; they stay as
+the historical record. Current mapping:
+
+- `web/index.html` (style block + shell + `#filters`) → `web/style.css`
+  (all page css, incl. the `[data-theme=light]` remap) + `src/render.ts`
+  (`page()` shell, `filterForm`).
+- `web/app.js` → deleted. `#filters` on doc is already gone:
+  `page({ filters = "" })` and the doc route passes none.
+- `web/doc.js` (h2 title, `/api/doc` fetch) → deleted. `src/render.ts`
+  `docPage()` renders `<h1 class="doc-title">`, `<article class="md">`
+  and the raw-source `<details>` server-side.
+- `src/serve.ts` VENDOR map already maps all seven vendor css incl.
+  `theme.light.switch.min.css` — old checklist item 1 is landed, not
+  pending.
+- `src/parse.ts` exposes raw frontmatter as `ParsedTask.attrs` (D3 rides
+  it); `src/next.ts` `nextUp` is server-side (D8 rides it).
+
+### D1 — Colors: neutral light, desaturated accents in both themes
+
+tsk does NOT parrot the operator's tufte-styled personal site
+(zola-harmless: cream `#fffff8`, serif). The viewer is a tool aesthetic —
+identity lives in the graph and the layout, not a paper imitation.
+
+- Light theme = NEUTRAL: Open Props gray ramp surfaces (`--gray-0`/`--gray-1`)
+  + text `--gray-9`/`--gray-10` (the light switch vars already lean gray —
+  keep them; add nothing warm).
+- Dark theme keeps the current desaturated surfaces.
+- Chip/accent hues: desaturated steps in BOTH themes — the dark neon fix
+  (baked scope 5) generalizes. Move every fixed ramp step off step-6
+  (chips, `.st`, status bars, edges, `.md a` blue-4, checkbox
+  `accent-color` blue-6) to low-chroma picks (higher ramp steps and/or
+  `-hsl` variants; the five statuses stay distinguishable in both
+  themes).
+- Vendored tokens only — no raw hex (`test/web-tokens.test.ts` AC8).
+- No cream anywhere in the viewer; no serif (D2).
+
+### D2 — Fonts: system stacks stay, no serif
+
+use-system-fonts philosophy, already conforming in `web/style.css`:
+system sans everywhere; `ui-monospace` for paths/ids/code. The operator
+REJECTED introducing serif for doc pages — his personal site keeps its
+serif; the tsk viewer never gets one. No work in this card; a standing
+bar against future drift.
+
+### D3 — Marginnotes: frontmatter as right rail
+
+The borrowed idea, from the operator's zola-harmless aside pattern
+(in-body margin notes, not footer).
+
+- `src/render.ts` `docPage()`: frontmatter metadata (status;
+  blocked-by, each entry resolved to a corpus-relative `/doc/…` link;
+  tags and created_at when present — raw frontmatter rides
+  `ParsedTask.attrs`, path resolution reuses the serve roots + `relOf`
+  trust pattern) renders as `<aside class="marginnote">`.
+- Layout: grid — main column + marginnote column ~240px at ≥1280px
+  viewport; below that breakpoint the aside stacks UNDER the content.
+- Styling: `--text-2`, 0.85rem, no borders.
+- Raw source keeps its `<details>`. This REPLACES the bare
+  hide-behind-details as the only metadata surface: details stays for
+  the full source, the marginnote becomes the at-a-glance metadata UI.
+
+### D4 — Title full-width (ruled)
+
+`docPage()` renders `<h1 class="doc-title">` BEFORE the `.doc` column
+div — a structural breakout, not CSS (today the h1 sits inside `.doc`
+and inherits the 75ch measure). Back-link stays above.
+
+### D5 — Lists: markers hang in the gutter (ruled)
+
+Inside `.doc`: `list-style-position: outside`, `padding-left: 0`
+(markers hang in the left gutter, list text at full column measure);
+nested `ul` gets `margin-left: 1rem` for hierarchy; markers tinted
+`--text-2` (`::marker`). `web/style.css`, `.doc .md ul/ol` block.
+
+### D6 — Pre/code breakout (ruled earlier)
+
+`pre` blocks escape the column: width breakout to ~1200px max, centered
+against `<main>` (breakout mechanics are the executor's — negative
+inline margins or `width: min(1200px, …)` + `margin-inline: auto`).
+Keep the existing `white-space: pre-wrap` + surface/border styling.
+
+### D7 — Permalinks on h2/h3
+
+`src/markdown.ts` heading render: emit an `id` + a zola-anchor-style `¶`
+link on h2/h3; revealed on heading hover, `--text-2`.
+
+### D8 — Next link in the doc footer
+
+Doc page footer link `next →` to `nextUp[0]`. `nextUp` is already
+computed server-side (`src/next.ts`) for `/next`; compute it in the
+`/doc` handler (`m` is already in scope, `src/serve.ts`) and thread the
+href through `docPage()`. Render only when `nextUp` is non-empty.
+
+### D9 — Checkbox write-back: OUT (explicit non-goal)
+
+Interactive checkbox write-back on doc pages is a FEATURE, not a design
+concern — explicitly out of this card. If ever requested: a separate
+follow-up card. Do not sneak write-back interactivity into the doc
+checkboxes.
+
+### D10 — Theme toggle mechanics unchanged
+
+`data-theme` flip on `<html>` + localStorage + no-flash inline script in
+`<head>` (per the earlier checklist). Landed: the toggle button +
+persistence (`web/main.js`), the light switch css, the light remap.
+Still to add: the tiny pre-paint inline boot script in the shell head
+(`src/render.ts`) — today `web/main.js` is `defer`, so the stored theme
+applies post-parse and a light flash is possible against the dark
+default. `data-theme="dark"` stays the default attribute (pinned by
+`test/web-tokens.test.ts`); light tokens = neutral per D1.
+
+
+## Design decisions (final, operator + parent, 2026-11-19)
+
+- **D1 colors** — tsk does NOT parrot the operator's tufte-styled personal site (zola-harmless: cream #fffff8, serif). Light theme = NEUTRAL: Open Props gray ramp surfaces + text gray-9/10; dark = current desaturated surfaces. Chip/accent hues desaturated in BOTH themes.
+- **D2 fonts** — use-system-fonts: system sans everywhere; ui-monospace for paths/ids/code. NO serif in doc pages (operator rejected; his personal site keeps serif — there it stays).
+- **D3 marginnotes** — the borrowed idea (operator's zola-harmless `<aside class="marginnote">` pattern, in-body not footer): frontmatter metadata (status, blocked-by resolved paths, tags, created_at) renders as a right-rail aside on /doc at ≥1280px viewport; stacks below content on narrower. Styling: --text-2, 0.85rem, no borders. Raw source keeps <details>.
+- **D4 title full-width** (ruled): docPage renders <h1> BEFORE the .doc column div (structural breakout).
+- **D5 lists** (ruled): inside .doc — list-style-position outside, padding-left 0 (markers hang in the gutter, text at full measure); nested ul margin-left 1rem; markers tinted --text-2.
+- **D6 pre/code breakout** (ruled earlier): pre escapes the column (~1200px max, centered).
+- **D7 permalinks**: h2/h3 hover ¶ anchors (--text-2).
+- **D8 next-link**: doc footer "next →" to nextUp[0] (only when non-empty).
+- **D9 checkbox write-back**: OUT of this card (feature, not design) — follow-up card if requested.
+- **D10 theme toggle mechanics** unchanged (data-theme flip + localStorage + no-flash head script); light tokens neutral per D1.
+
 ## Decomposition
 
 <!-- Placeholder — DO NOT pre-fill.
@@ -256,6 +422,13 @@ Reviewed 2026-11-19, dark theme, all four routes at 1562x547 + 1920x1080
   header (persist localStorage, default dark); then a designer subagent
   reviews ALL pages — leave placeholder sections for its findings and for
   the post-review decomposition.
+- Design decisions finalized 2026-11-19 (operator + parent session):
+  neutral light palette, no cream, no serif (D1, D2); marginnotes from
+  the zola-harmless aside pattern (D3); title full-width, gutter lists,
+  pre breakout, permalinks, next-link (D4-D8); checkbox write-back OUT
+  (D9); toggle mechanics confirmed, no-flash boot script still to add
+  (D10). Wave C (server-rendered pages) landed between the review and
+  these rulings — the checklist is re-based on post-wave-C files.
 - Hard edge rationale: [real-routes-kill-hash](./real-routes-kill-hash.md)
   (pending) rewrites the routing this design sits on (`web/app.js`
   pathname routing, `web/doc.js` relpath fetch/back-link) and changes doc
