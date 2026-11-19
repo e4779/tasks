@@ -14,6 +14,20 @@ test("AC8: web assets + html-emitting src carry no raw hex — colours come only
   expect(offenders).toEqual([]);
 });
 
+test("swap glue contract: opt-in marker, header negotiation, history, native fallback, trust comment", () => {
+  const js = readFileSync(join(root, "web/main.js"), "utf8");
+  for (const part of [
+    'dataset.swap === "main"', // keys off the server opt-in marker, never route sniffing
+    '"x-fragment": "main"', // fragment negotiation header (matches src/serve.ts)
+    "history.pushState", // URL = the only state (no cookies/localStorage here)
+    'addEventListener("popstate"', // back/forward walks filter history
+    "form.submit()", // fetch failure → native GET, no dead UI
+    "textContent", // <title> via DOM API, never string interpolation
+    "Trust boundary", // documented reasoning at the swap site (card ruling 5)
+  ])
+    expect(js).toContain(part);
+});
+
 test("layout emits the wave C contract: nav links, both theme switches, dark default, main+form hooks", () => {
   const css = readFileSync(join(root, "web/style.css"), "utf8");
   const body = page({

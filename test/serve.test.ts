@@ -62,6 +62,38 @@ test("/list filters are URL arguments: ?status=… and ?q=… filter server-side
   expect(q).not.toContain("/doc/tasks/normal-card.md");
 });
 
+test("/list + x-fragment: main → swap fragment: no page wrapper, filtered subset only", async () => {
+  const r = await fetch(`${base}/list?status=done`, { headers: { "x-fragment": "main" } });
+  expect(r.status).toBe(200);
+  const frag = await r.text();
+  expect(frag).not.toContain("<!doctype html"); // partial, not a page
+  expect(frag).not.toContain("<nav>");
+  expect(frag).toContain("<title>list — tsk</title>");
+  expect(frag).toContain('<main id="main">');
+  expect(frag).toContain("/doc/tasks/completed-card.md"); // the filtered subset
+  expect(frag).not.toContain("/doc/tasks/normal-card.md");
+  // query-fresh filter form rides along: the glue re-syncs the live form's
+  // chip aria-pressed from it (chips sit outside the swap target)
+  expect(frag).toContain('data-chip="done" aria-pressed="true"');
+  expect(frag).toContain('data-chip="all" aria-pressed="false"');
+});
+
+test("/graph + x-fragment: main → svg fragment, no d3 script tag", async () => {
+  const frag = await (
+    await fetch(`${base}/graph?q=cyclic`, { headers: { "x-fragment": "main" } })
+  ).text();
+  expect(frag).not.toContain("<!doctype html");
+  expect(frag).not.toContain("d3.min.js"); // head script stays on the page, not the fragment
+  expect(frag).toContain('<main id="main">');
+  expect(frag).toContain("<svg data-zoom");
+  expect(frag).toContain("cyclic-a.md");
+});
+
+test("x-fragment with a foreign value is ignored — classic page falls back", async () => {
+  const r = await fetch(`${base}/list`, { headers: { "x-fragment": "bogus" } });
+  expect(await r.text()).toContain("<!doctype html");
+});
+
 test("/next: server-rendered nextUp output, linked", async () => {
   const html = await (await get("/next")).text();
   expect(html).toContain("no-h1");

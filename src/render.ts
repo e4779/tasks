@@ -80,6 +80,18 @@ ${CHIPS.map((c) => `<button type="submit" name="status" value="${c}" data-chip="
 </form>`;
 
 /**
+ * swap-fragment answer (client glue tags its fetch `x-fragment: main`): the
+ * same <main> the page() wraps plus the title and the query-fresh filter form
+ * — no <html>, no nav, no page chrome. The glue lifts #main + <title> from it
+ * and re-syncs the OUTSIDE-<main> chips' aria-pressed from the fresh form.
+ */
+export const mainFragment = (title: string, body: string, filters = ""): string =>
+  `<title>${esc(title)}</title>
+${filters}<main id="main">
+${body}
+</main>`;
+
+/**
  * shared q+status filter: q matches title or path (case-insensitive), status
  * filters exact (null = all). Ghosts only survive when asked for (graph keeps
  * its ghost edges; list never shows them).

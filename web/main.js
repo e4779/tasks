@@ -7,11 +7,62 @@ document.getElementById("theme")?.addEventListener("click", () => {
   localStorage.setItem("theme", root.dataset.theme);
 });
 
-const svg = document.querySelector("svg[data-zoom]");
-if (svg && globalThis.d3)
-  // progressive enhancement: the graph is fully readable with JS off
-  d3.select(svg).call(
-    // wheel/pinch/dblclick zoom + drag pan; d3 stores the live transform on
-    // the element itself (svg.__zoom) where the probe reads it
-    d3.zoom().on("zoom", (e) => svg.querySelector("g")?.setAttribute("transform", e.transform)),
-  );
+// (re)bindable so the fragment swap can re-attach zoom to the fresh svg
+const bindZoom = () => {
+  const svg = document.querySelector("svg[data-zoom]");
+  if (svg && globalThis.d3)
+    // progressive enhancement: the graph is fully readable with JS off
+    d3.select(svg).call(
+      // wheel/pinch/dblclick zoom + drag pan; d3 stores the live transform on
+      // the element itself (svg.__zoom) where the probe reads it
+      d3.zoom().on("zoom", (e) => svg.querySelector("g")?.setAttribute("transform", e.transform)),
+    );
+};
+bindZoom();
+
+// filter fragment swap (htmx-style, hand-rolled — no htmx dep, no new deps).
+// Trust boundary: the fetch is a same-origin relative URL taken from the
+// form's own action; the response is OUR server-rendered sanitized HTML that
+// WE generated (src/render.ts escapes every task-derived string), so swapping
+// it into our DOM stays inside the boundary. This covers only our own SSR
+// output — it does not relax the /doc resolution/sanitization rules. The glue
+// itself never interpolates task-derived strings into HTML: per-node reads go
+// through DOM APIs (textContent for <title>), and the swapped nodes arrive as
+// parsed DOM, not string-built markup.
+const form = document.getElementById("filters");
+if (form?.dataset.swap === "main") {
+  const swapMain = async (url) => {
+    const r = await fetch(url, { headers: { "x-fragment": "main" } });
+    if (!r.ok) throw new Error(`swap: ${r.status}`);
+    const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+    const fresh = doc.getElementById("main");
+    const live = document.getElementById("main");
+    if (!fresh || !live) throw new Error("swap: no #main in response");
+    live.replaceWith(fresh);
+    const t = doc.querySelector("title");
+    if (t?.textContent) document.title = t.textContent;
+    // chips sit OUTSIDE <main>: re-sync aria-pressed from the fetched form so
+    // the pressed state can't go stale after a chip-driven swap (the q value
+    // needs no sync — the fetch echoed exactly what the form holds)
+    const chips = form.querySelectorAll("button[data-chip]");
+    doc.querySelectorAll("#filters button[data-chip]").forEach((b, i) => {
+      const chip = chips[i];
+      if (chip) chip.setAttribute("aria-pressed", b.getAttribute("aria-pressed") ?? "false");
+    });
+    bindZoom(); // graph pages: attach zoom to the swapped-in svg
+  };
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    // submitter rides along: chip-button name/value land in the query string
+    const url = `${form.action}?${new URLSearchParams(new FormData(form, e.submitter))}`;
+    swapMain(url).then(
+      () => history.pushState(null, "", url),
+      // fetch failed / non-2xx → native GET; submit() bypasses the listener,
+      // so there is no recursion and the page loads fully as wave C shipped
+      () => form.submit(),
+    );
+  });
+  // back/forward walks the filter history; no pushState here, and a dead
+  // fetch reloads the restored URL natively instead of a dead UI
+  addEventListener("popstate", () => swapMain(location.href).catch(() => location.reload()));
+}

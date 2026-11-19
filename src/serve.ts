@@ -9,7 +9,16 @@ import { renderGraph } from "./graph-view";
 import { renderMd } from "./markdown";
 import { hardBlocked, nextUp } from "./next";
 import { parseFile } from "./parse";
-import { docPage, filtered, filterForm, listTable, nextPage, notFoundPage, page } from "./render";
+import {
+  docPage,
+  filtered,
+  filterForm,
+  listTable,
+  mainFragment,
+  nextPage,
+  notFoundPage,
+  page,
+} from "./render";
 
 export type SnapshotNode = Readonly<{
   path: string;
@@ -115,28 +124,33 @@ export const startServer = (roots: string[], port: number, host = "127.0.0.1") =
         const status = !statusParam ? null : statusParam;
         const rel = (abs: string) => relOf(m.rs, abs);
         const docHref = (abs: string) => `/doc/${encodeURI(rel(abs))}`;
+        // htmx-style swap: the client glue tags its fetch `x-fragment: main`;
+        // absent or any other value gets the classic full page — the form
+        // still works without JS and the enhancement degrades to a reload
+        const frag = req.headers.get("x-fragment") === "main";
         if (p === "/list") {
           const { nodes } = filtered(m.snap, q, status, false);
-          return html(
-            page({
-              active: "list",
-              title: "list — tsk",
-              body: listTable(nodes, rel),
-              filters: filterForm("list", q, status),
-            }),
-          );
+          const body = listTable(nodes, rel);
+          const filters = filterForm("list", q, status);
+          return frag
+            ? html(mainFragment("list — tsk", body, filters))
+            : html(page({ active: "list", title: "list — tsk", body, filters }));
         }
         const { nodes, edges } = filtered(m.snap, q, status, true); // graph keeps ghosts (ghost edges included)
-        return html(
-          page({
-            active: "graph",
-            cls: "fill",
-            title: "graph — tsk",
-            body: await renderGraph(nodes, edges, docHref),
-            zoom: true,
-            filters: filterForm("graph", q, status),
-          }),
-        );
+        const body = await renderGraph(nodes, edges, docHref);
+        const filters = filterForm("graph", q, status);
+        return frag
+          ? html(mainFragment("graph — tsk", body, filters))
+          : html(
+              page({
+                active: "graph",
+                cls: "fill",
+                title: "graph — tsk",
+                body,
+                zoom: true,
+                filters,
+              }),
+            );
       }
 
       if (p === "/next") {
