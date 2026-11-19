@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Move ponytail-developer to package agents/ (user-level)
