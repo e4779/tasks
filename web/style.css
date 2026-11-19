@@ -301,9 +301,6 @@ a.back {
   justify-content: center;
   align-content: start;
   column-gap: var(--size-6);
-  /* how far the column center sits left of the page center — grows to
-     half the rail+gap at >=1280px (D3), so breakouts re-center on the PAGE */
-  --col-nudge: 0px;
 }
 /* auto-placement quirk: explicitly-placed aside pulled a later auto child into
    the rail — pin every child to column 1, the aside overrides */
@@ -311,7 +308,13 @@ a.back {
   grid-column: 1;
 }
 .doc pre {
-  white-space: pre-wrap;
+  /* operator ruling 2026-11-19: code stays IN THE PARAGRAPH FLOW — like
+     4779.ru's .mbe-code pre: no breakout, overflow scrolls INSIDE.
+     (centered-breakout experiment failed: % margins resolved against the
+     grid track measured off-center in the wild, and page-centering fought
+     the D3 rail — both reverted) */
+  white-space: pre;
+  overflow-x: auto;
   background: var(--surface-1);
   border: 1px solid var(--surface-3);
   border-radius: 8px;
@@ -320,15 +323,6 @@ a.back {
   /* D2: code is monospace — the base stack is sans, and open-props normalize
      lets pre inherit it; without this, ASCII art columns drift */
   font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
-  /* D6 breakout: wider than the column, centered on it. % margins resolved
-     against the grid track measured off-center in the wild (pre.x 57 vs
-     expected 190 on a 1549px .doc) — left:50% + translateX(-50%) centers
-     on the transform's own width instead: exact, no containing-block % */
-  position: relative;
-  left: calc(50% + var(--col-nudge));
-  transform: translateX(-50%);
-  width: min(1200px, 92vw);
-  max-inline-size: none;
 }
 .marginnote {
   grid-column: 1;
@@ -352,7 +346,6 @@ a.next:hover {
 @media (min-width: 1280px) {
   .doc {
     grid-template-columns: minmax(0, 75ch) 15rem;
-    --col-nudge: calc((15rem + var(--size-6)) / 2);
   }
   .marginnote {
     grid-column: 2;
