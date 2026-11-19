@@ -126,10 +126,118 @@ this card intentionally does NOT pre-decompose.
 
 ## Design review (designer findings)
 
-<!-- Placeholder — DO NOT pre-fill.
-     After this card lands, a designer subagent critically reviews ALL
-     pages (list / next / graph / doc, both themes) and APPENDS its
-     findings to this section. -->
+Reviewed 2026-11-19, dark theme, all four routes at 1562x547 + 1920x1080
+(plus homelab corpus graph+doc at 1920x1080); shots in /tmp/shots/.
+
+### Ruling violations — known, listed not re-litigated
+
+- **Column**: doc body collapses to a ~480px left-hugging fragment — root
+  cause `tsk-doc` has no `display:block` rule (style block, `web/index.html`,
+  cf. `tsk-graph` which has one); probe-measured `display:inline`, `p` 480px
+  vs `main` 1905px at 1920x1080.
+- **Title**: `web/doc.js:62` renders the title as `el("h2")` — computed
+  14px/400 while body `.md h2` is 20px (`web/index.html:69`); body headings
+  visually outrank the page title.
+- **Filter bar on doc**: `web/app.js:17` — `#filters` lives in the static
+  shell template, rendered unconditionally on every route.
+- **Theme toggle**: absent; `data-theme="dark"` hardcoded
+  (`web/index.html:2`), `:root { color-scheme: dark }` hardcoded
+  (`web/index.html:14`).
+- **Chips**: step-6 ramp hues (`web/index.html:23-27`) — neon on dark.
+
+### P1 (ugly/broken)
+
+1. **Doc body width is a fragmentation accident, not a layout.**
+   `tsk-doc` (selector `tsk-doc`, `web/index.html` style block) has no
+   `display` rule, so it renders inline; block children land in narrow
+   left-hugging anonymous fragments — paragraphs ~480px while the
+   `raw source` details/pre row spans the full 1905px on the same page
+   (homelab-doc-1920.png: two competing widths, one wall of text). The
+   ruled centered column must start from `tsk-doc { display: block }`, or
+   any max-width/margin-inline fights the fragmentation instead of layout.
+2. **Graph legend overlaps cards at short viewports.** `.tsk-legend`
+   absolute bottom-right (`web/index.html:50`) paints on top of bottom-row
+   cards at 1562x547 (graph-1562x547.png: covers the right half of the
+   bottom-right card). `pointer-events: none` saves clicks, not eyes.
+3. **done/cancelled cards are illegible, not de-emphasized.**
+   `.card.dim { opacity: .4 }` (`web/index.html:56`, applied
+   `web/graph.js:179`) drops 12px titles below readability and washes out
+   the status bar too — reads as broken rendering, not hierarchy.
+
+### P2 (polish)
+
+1. Clickable rows have no hover/focus feedback — `tbody tr { cursor:
+   pointer }` (`web/index.html:38`) is the only affordance; rows are not
+   keyboard reachable either (click-only handler, `web/list.js`; no
+   tabindex/role/link). Add a `tbody tr:hover` surface + real links.
+2. List table full-bleed: at 1920 the title→path gap is ~1100px of dead
+   whitespace (list-1920x1080.png), and paths repeat the redundant absolute
+   prefix `/home/e4779/projects/tsk/tasks/...`. Cap the table measure
+   (~1280px, centered) and/or show corpus-relative paths — separate from
+   the doc-column ruling, same one-declaration cost.
+3. Next page is an orphan list: no heading/count, rows flush against the
+   viewport edge (`.next-item`, `web/index.html:37`), no status shown (can't
+   tell pending from in-progress), rows not clickable while list rows are —
+   inconsistent affordance (`web/next.js`).
+4. Chips on `#/next` are dead controls: the next view (`web/app.js:86`)
+   filters by `isNext` + match only, ignoring `chips` — done/cancelled/
+   blocked chips do nothing there. The ruling says filters on next stay
+   "fully functional" — today they aren't; wire them or hide them
+   (executor's call, do not silently keep dead UI).
+5. Graph affordances are invisible: wheel-zoom/pan/click-card exist but
+   nothing hints at them; the legend (`web/graph.js` LEGEND) explains edge
+   kinds only — the card status bars (pending/in-progress/done/cancelled/
+   blocked/none) have no key. Add a one-line hint + status key rows.
+6. Soft edges nearly invisible on dark: `--gray-7` dashed strokes
+   (`web/index.html:44,47`) on `--surface-1` — only visible on a close look.
+7. Empty states are raw text nodes: graph `no matching tasks`
+   (`web/graph.js:82`) renders unstyled top-left inside the bordered
+   canvas; doc not-found is similarly stark. Style both while touching
+   those files.
+8. Neon family leaks beyond chips: checkbox `accent-color: var(--blue-6)`
+   (`web/index.html:74`), `.md a` blue-4 (`web/index.html:75`) — fold into
+   the same desaturation/token pass as the ruled chips.
+
+### Theme toggle pre-work (what the toggle needs)
+
+- `node_modules/open-props/theme.light.switch.min.css` EXISTS (v1.7.23);
+  mechanism mirrors dark: `:where([data-theme=light],.light,.light-theme)`
+  overrides `--text-1/--text-2/--surface-*` AND sets `color-scheme` per
+  theme. Toggle = flip `data-theme` on `<html>` + add the `<link>` + drop
+  the hardcoded `:root { color-scheme: dark }` (`web/index.html:14`).
+- The ruling does NOT cover: ~15 fixed ramp steps in `web/index.html`
+  (chips :23-27, `.st` :32-36, bars :57-63, edges :42-47, accent :74,
+  links :75) do not flip with the switch. On light they fail: step-6 text
+  on gray-0 fails small-text contrast (orange-6 on white ≈ 2.9:1), gray-7
+  soft edges go invisible, chip active text `--surface-1` (near-white) on
+  step-6 bg fails. The toggle needs a small `[data-theme=light]` remap
+  (higher steps: ~-9/-11 for text, ~-8/-9 for fills) or light mode ships
+  half-broken.
+
+### Vision-unsure
+
+- homelab-graph-1920.png: 12px card labels at fit-zoom — most legible,
+  some not; readability flagged regardless of individual labels.
+- indigo-6 (blocked) vs blue-6 (in-progress) chips: distinct in both
+  shots, borderline at a glance — both readings stand.
+- doc-1562x547.png: `.md h1` (1.4rem) vs page-title h2 (14px) — certain
+  the body heading wins; shot cuts mid-heading, no second reading needed.
+
+### Suggested decomposition (least code)
+
+1. **Doc pass (ruled)**: `tsk-doc { display: block }` + centered 65-75ch
+   column + `el("h1")` title + drop `#filters` on the doc route —
+   `web/index.html`, `web/app.js`, `web/doc.js`.
+2. **Theme toggle (ruled) + token remap**: toggle button + light switch
+   link + drop hardcoded color-scheme + `[data-theme=light]` remap of the
+   fixed ramp steps + dark chip desat — `web/index.html`, `web/app.js`,
+   `src/serve.ts` VENDOR map.
+3. **Graph polish**: legend collision fix + dim .4→~.65 + status key in
+   legend + soft-edge contrast + styled empty state + zoom/click hint —
+   `web/index.html`, `web/graph.js`.
+4. **Table/next polish**: row hover + keyboard-reachable rows, next
+   affordance/status/count, list measure cap + path shortening —
+   `web/index.html`, `web/list.js`, `web/next.js`, `web/app.js`.
 
 ## Decomposition
 
