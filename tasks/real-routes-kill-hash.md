@@ -2,114 +2,95 @@
 status: pending
 ---
 
-# Real routes kill hash routing
+# Real routes + server-rendered pages (wave C) — hash, SPA and /api all die
 
 ## Objective
 
-Doc URLs today are ugly monsters — absolute-encoded fs paths behind a hash
-route (`/#/doc?path=%2Fhome%2F...`). Ruled by operator 2026-11-19: they
-become normal paths — `/doc/tasks/ponytail-user-level.md` — RELATIVE to the
-served corpus root, WITH the `.md` kept (plumber-canonical: URL = file).
-`/list` `/next` `/graph` become real routes too. The client `#` routing
-dies entirely — no redirects for legacy `#/` URLs, they just stop working.
+Operator ruling 2026-11-19 (design discussion): the viewer becomes CLASSIC
+server-rendered pages. Doc URLs stop being monsters
+(`/#/doc?path=%2Fhome%2F...`) and become canonical file addresses:
+`/doc/tasks/ponytail-user-level.md` — relative to the served corpus root,
+`.md` kept (plumber-canonical: URL = file). Tab routes become real pages:
+`/list`, `/next`, `/graph`. Everything is rendered SERVER-SIDE per request
+(our computed-views doctrine, literally); the browser gets complete HTML.
+Client JS shrinks to two tiny pieces: vendored d3-zoom for graph pan/zoom
+and a 5-line theme toggle. `#/`-routing, the SPA shell, pushState/popstate,
+client tab state, the whole `/api/*` JSON layer and client-side markdown
+rendering all die.
 
-## Baked spec (session design discussion 2026-11-19 — not the executor's to redesign)
+## Routes
 
-Server (`src/serve.ts`):
+- `GET /` → redirect (303) to `/list` (or render list directly — executor's
+  call, document it).
+- `GET /list` — server-rendered table: discover → parse → cards; columns
+  status/title/path; undone first, then path (same order as `nextUp`).
+- `GET /next` — server-rendered nextUp output.
+- `GET /graph` — server-rendered SVG: discover → parse → buildGraph →
+  mergeEdges → bundleEdges → elk layout (server-side elkjs; 87–118ms @ 180
+  nodes measured — fine) → SVG emitted inline into the page. Edge bundling,
+  per-kind trunks, cycle-red overlay: all server geometry (move
+  `web/edge-bundler.js` + card geometry fns into `src/`; they were browser
+  only by accident of the canvas era).
+- `GET /doc/<relpath.md>` — server-rendered document: markdown-it (npm
+  module, server-side — the vendored browser UMD dies) → HTML; leading h1
+  skipped (title above), frontmatter hidden, raw source behind `<details>`.
+- Resolution/trust boundary: `/doc` relpath resolves against the served
+  roots + corpus membership re-check per request (same rule as the old
+  `/api/doc`); abs paths, `..`, unresolvable → 404 page.
 
-- `GET /list`, `/next`, `/graph`, `/doc/*` all serve the SAME `index.html`
-  shell — the app is client-rendered from `/api/snapshot`; the server does
-  not know tabs. Unknown app-routes → shell too, or 404 — executor picks
-  and documents the choice next to the route table.
-- `/api/doc` gains the relpath protocol: the client sends the path
-  RELATIVE to the served roots (`tasks/ponytail-user-level.md`); the
-  server resolves against the roots and re-checks corpus membership via
-  `discover()` recomputed per request — trust boundary preserved, no
-  arbitrary fs reads; absolute paths, `..` traversal, empty → 404.
-- `/api/snapshot` nodes gain `relPath` — relative to `roots[0]`; the
-  multi-root prefix rule (node lives under another root) is documented
-  next to the field.
+## Pages share one layout (function includes, NOT a template engine)
 
-Client (`web/`, plain JS, no router lib — pathname parsing is trivial):
+`src/render.ts` (or similar): `page({active, title, body})` wrapper emitting
+head (Open Props links, d3/zoom script only on /graph, theme-toggle 5-liner)
++ `<nav><ul><li><a>` (plain links; "tabs" are pure CSS styling of
+`aria-current`) + body. Server-side filter form on list/graph: GET form →
+query params (`?status=pending&q=therm`) — filters are URL arguments,
+server filters, shareable/bookmarkable/curl-able. Theme toggle: flips
+`data-theme` on `<html>` + localStorage; `theme.light.switch` subset link
+added; `[data-theme=light]` remap of the ~15 fixed ramp steps (chips, bars,
+edges, accent, links — they do NOT flip on their own; light mode ships
+half-broken without this remap, designer review flagged it).
 
-- `web/app.js` reads `location.pathname` to pick the active tab
-  (`/list` `/next` `/graph`; `/doc/<relpath>` → doc view).
-- Tab switches use `history.pushState` — instant, no reload; F5/reload
-  works because the server serves the shell on every app route; browser
-  back/forward = `popstate`.
-- `.md` stays in URLs (operator ruling — address = file).
-- `web/doc.js` fetches `/api/doc?path=<relpath>`; body links (md links
-  and `[[wikilinks]]`) resolve against the current doc's relpath dir and
-  rewrite to `/doc/<relpath>` — links between cards become real doc
-  routes; absolute `http(s)` targets stay verbatim; the `safeHref`
-  allowlist and the scrub pipeline are untouched.
-- `web/list.js`, `web/graph.js`, `web/next.js` node-click →
-  `/doc/<relpath>` (next.js has no click handler today — it gains one).
-- Legacy `#/` URLs die: zero `#/` left under `web/`.
+## Client JS inventory after this wave (COMPLETE list)
 
-Probes/tests:
+1. d3-zoom (vendored) wired to the graph SVG: wheel/pinch pan+zoom over the
+   static server SVG. Progressive enhancement: the graph is fully readable
+   with JS off.
+2. Theme toggle 5-liner (localStorage persist, default dark).
+Everything else that today lives in `web/*.js` (app shell, SPA tabs,
+snapshot fetch, client markdown, client bundler consumers) is DELETED.
 
-- `tools/probe.mjs`: all AC routes move from `/#/x` to `/x`; `--viewport`
-  matrix unchanged. New AC OPTIONAL (routes exist = shell 200 on `/list`
-  `/next` `/graph` `/doc/<real relpath>` + snapshot nodes carry
-  `relPath`).
+## Card geometry → server
 
-## Checklist
+`web/edge-bundler.js`, card size/rect/intersect fns, `web/elk-adapter.js`
+move to `src/` (drop the `.js`-in-web pattern). `web/` keeps only CSS,
+d3-zoom glue, theme toggle.
 
-- [ ] `src/serve.ts`: shell routes `/list` `/next` `/graph` `/doc/*`
-      (unknown app-route choice documented); `/api/doc` relpath protocol
-      with the membership gate; `/api/snapshot` `relPath` + multi-root
-      rule documented.
-- [ ] `web/app.js`: pathname routing, `pushState` tab switches,
-      `popstate` listener, nav links to real routes, `#/` gone.
-- [ ] `web/doc.js`: relpath fetch; body md/wikilink rewrite to
-      `/doc/<relpath>`; back link uses the real last-tab pathname.
-- [ ] `web/list.js` + `web/graph.js` clicks → `/doc/<relpath>`;
-      `web/next.js` gains the click handler.
-- [ ] `test/serve.test.ts`: relpath protocol (member 200; non-corpus /
-      absolute / `..` / empty → 404, fs untouched), shell 200 on app
-      routes, `relPath` added to the snapshot shape test.
-- [ ] `tools/probe.mjs` routes moved to `/x`; optional new AC added.
-- [ ] `bun test` + `bun run check:full` green.
+## Gates (ac rebirth — most become curl-level)
 
-## Acceptance criteria
+- Geometry ACs (ac9 overlap, ac10 axis-aligned, ac11 attach, ac13 no-buses,
+  ac14 per-edge rise) assert against the SVG ATTRIBUTES in the served HTML:
+  curl /graph → parse → verdict. No CDP for geometry — the CDP dependency
+  that cost this project days dies with the canvas era's last client piece.
+- ac1 (fit) + ac5 (zoom) + vision passes stay CDP/vision (interaction +
+  looks) on the viewport matrix (4 sizes).
+- ac12 (no ellipsis) — server measures via the same cardSize fn; assert in
+  HTML.
+- New: /doc/<relpath> returns 200 + rendered HTML for every corpus file;
+  404 for abs/.. /missing (trust boundary), asserted.
+- Full gates: bun test green, check:full clean (biome symlink),
+  probe --ac matrix on test/fixtures AND ~/projects/homelab (with its
+  .tsk.conf negations: 80 nodes / 36 edges expected), --canvas dumps for
+  vision.
 
-- A fixture doc page's URL is `/doc/<relpath>` — no `#`, no query, no
-  absolute fs path; `.md` present. EVERY fixture doc in
-  `test/fixtures/tasks/` is reachable at its relpath URL.
-- `/list` `/next` `/graph` are real routes serving the shell; tab
-  switches are `pushState` (no full reload); F5 on any app route
-  restores the same view; back/forward walk history without errors.
-- Prose links between cards navigate via the new doc routes
-  (`normal-card.md` → `./cyclic-a.md` renders as
-  `/doc/<relpath-of-cyclic-a.md>`); graph/list/next node-click →
-  `/doc/<relpath>`.
-- Relpath trust boundary holds: non-corpus relpaths, absolute paths,
-  `..` traversal and empty → 404; the fs is only ever read at resolved
-  corpus-member paths.
-- Snapshot nodes carry `relPath` consistent with the documented
-  multi-root rule.
-- Zero console errors; full `--ac` matrix green on the fixtures corpus
-  AND the homelab corpus (its `.tsk.conf` negations active).
-- Legacy `#/` URLs: zero occurrences under `web/` (dead, no redirect).
+## Notes
 
-## Source
-
-- Operator ruling 2026-11-19 (essence, verbatim): doc URLs are ugly
-  monsters (`#/doc?path=%2Fhome%2F...` absolute-encoded) — must become
-  normal paths relative to the served corpus root, `.md` kept, URL =
-  file, plumber-canonical; client #routing dies.
-- Spec baked from the session design discussion 2026-11-19 (see Baked
-  spec above — server shell, pushState/popstate, relpath protocol).
-- Code: `src/serve.ts` (routes, `/api/doc`, `/api/snapshot`,
-  trust-boundary comments), `web/app.js` (hash router today),
-  `web/doc.js` (fetch + link pipeline), `web/list.js`, `web/graph.js`,
-  `web/next.js`, `web/index.html` (shell).
-- Tests/probes: `test/serve.test.ts`, `test/doc-view.test.mjs` (link
-  policy), `tools/probe.mjs` (AC1–AC14, `--viewport` matrix);
-  `test/probe-args.test.mjs` carries an inert `/#/graph` string as an
-  arg-parse fixture — not gating, updating it is optional.
-- Soft edges: builds on
-  [render-markdown-doc-view](./render-markdown-doc-view.md) (done — the
-  doc page this routing serves); probe-as-evidence pattern per
-  [fix-svg-title-truncation](./fix-svg-title-truncation.md).
+- `web/doc.js` markdown rendering moves server-side; markdown-it already an
+  npm dep (the browser UMD vendor entry dies).
+- Probe --ac rewrite is part of this wave (SVG attr assertions + route
+  changes) — budget it, it is not a footnote.
+- CDP stays in the harness for screenshots + the two interaction ACs only.
+- Design-pass card (blocked-by this) executes AFTER this wave — its
+  designer findings target the SSR pages.
+- Foreign-repo migrated corpora (homelab 80, bcf 40) are uncommitted in
+  those repos — operator review pending, unrelated to this wave's gates.
