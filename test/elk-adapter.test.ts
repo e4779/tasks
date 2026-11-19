@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildElkGraph, edgeId, mapLayout, polyToD } from "../web/elk-adapter.js";
+import { buildElkGraph, edgeId, mapLayout, polyToD } from "../src/elk-adapter";
 
 const nodes = [{ id: "tasks/a.md" }, { id: "tasks/b.md" }, { id: "tasks/c.md" }];
 const sizes = new Map([
@@ -50,7 +50,7 @@ describe("buildElkGraph", () => {
     expect(g.edges[2]?.targets).toEqual(["tasks/a.md"]); // cycle direction kept
   });
 
-  test("layout options: layered UP ORTHOGONAL at the canvas aspect; no size constraints", () => {
+  test("layout options: layered UP ORTHOGONAL at the graph aspect; no size constraints", () => {
     expect(g.layoutOptions["elk.algorithm"]).toBe("layered");
     expect(g.layoutOptions["elk.direction"]).toBe("UP"); // blockers upstream, see buildElkGraph
     expect(g.layoutOptions["elk.edgeRouting"]).toBe("ORTHOGONAL");

@@ -1,28 +1,39 @@
 // Pure ELK bridge: viewer nodes/edges → ELK JSON, ELK result → card rects
 // (top-left + size, exactly what the svg painter draws) + edge polylines.
-// No DOM, no ELK import — only mapping math, unit-tested against a fixture
-// result object.
+// No ELK import — only mapping math, unit-tested against a fixture result.
 
-/** @typedef {Readonly<{id: string}>} Node */
-/** @typedef {Readonly<{from: string, to: string, kind: string}>} Edge */
-/** @typedef {Readonly<{w: number, h: number}>} Size */
-/** @typedef {Readonly<{x: number, y: number}>} Pt */
-/** @typedef {Readonly<{id: string, x: number, y: number, width?: number, height?: number}>} ElkChild */
-/** @typedef {Readonly<{id: string, sections?: readonly {startPoint: Pt, endPoint: Pt, bendPoints?: readonly Pt[]}[]}[] | null>} ElkEdges */
+export type Pt = Readonly<{ x: number; y: number }>;
+export type Size = Readonly<{ w: number; h: number }>;
+export type ElkNodeRef = Readonly<{ id: string }>;
+export type ElkEdgeRef = Readonly<{ from: string; to: string; kind: string }>;
+export type ElkChild = Readonly<{
+  id: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}>;
+export type ElkSection = Readonly<{ startPoint: Pt; endPoint: Pt; bendPoints?: readonly Pt[] }>;
+export type ElkEdges = ReadonlyArray<Readonly<{
+  id: string;
+  sections?: ReadonlyArray<ElkSection> | null;
+} | null> | null> | null;
+export type ElkResult = Readonly<{ children?: readonly ElkChild[]; edges?: ElkEdges }>;
 
 // stable edge id shared by graph building and polyline lookup (parallel
 // soft/hard edges between the same pair must not collide)
-export const edgeId = (e) => `${e.from}\t${e.to}\t${e.kind}`;
+export const edgeId = (e: ElkEdgeRef): string => `${e.from}\t${e.to}\t${e.kind}`;
 
 /**
- * @param {readonly Node[]} nodes id-keyed
- * @param {ReadonlyMap<string, Size>} sizes card size per node id (measureText)
- * @param {readonly Edge[]} edges ALL edges — ELK layered breaks cycles internally
- *   but still routes them (that is why cycles need no hand path)
- * @param {number} aspect container w/h — layered stretches towards it, so the
+ * @param aspect container w/h — layered stretches towards it, so the
  *   viewBox meet-fit covers both axes of whatever viewport is watching
  */
-export const buildElkGraph = (nodes, sizes, edges, aspect) => ({
+export const buildElkGraph = (
+  nodes: readonly ElkNodeRef[],
+  sizes: ReadonlyMap<string, Size>,
+  edges: readonly ElkEdgeRef[],
+  aspect: number,
+) => ({
   id: "root",
   // zero edges → rectPacking: layered stacks the whole corpus into one rank
   // (an overlap wall); rectPacking packs the rects in 2D and routes nothing —
@@ -40,6 +51,9 @@ export const buildElkGraph = (nodes, sizes, edges, aspect) => ({
           "elk.aspectRatio": String(aspect / 1.5),
         }
       : {
+          // elkjs 0.12.1 layered IGNORES elk.aspectRatio once the graph has
+          // several components (homelab: 44 components → world aspect 7.19 at any
+          // ask) — components.ts repacks elk's own component boxes post-layout
           "elk.algorithm": "layered",
           "elk.edgeRouting": "ORTHOGONAL", // right angles, ≤2 bends per edge
           // layout space vs data space: data edges run dependent(from) → blocker(to);
@@ -59,22 +73,30 @@ export const buildElkGraph = (nodes, sizes, edges, aspect) => ({
 });
 
 /** polyline → SVG path d: M then L commands, space-separated pairs */
-export const polyToD = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("");
+export const polyToD = (pts: readonly Pt[]): string =>
+  pts.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("");
 
 /**
  * ELK speaks top-left + width/height; that IS the svg card rect (transform
  * translate + rect w/h), so positions pass through untouched.
- * @param {Readonly<{children: readonly ElkChild[], edges?: ElkEdges}>} result ELK layout output
- * @returns {{rects: Map<string, Pt & Size>, polylines: Map<string, readonly Pt[]>}}
+ * @returns rects (node id → rect) and polylines (edge id → points)
  */
-export const mapLayout = (result) => ({
+export const mapLayout = (
+  result: ElkResult,
+): {
+  rects: Map<string, Pt & Size>;
+  polylines: Map<string, readonly Pt[]>;
+} => ({
   rects: new Map(
-    result.children.map((n) => [n.id, { x: n.x, y: n.y, w: n.width ?? 0, h: n.height ?? 0 }]),
+    (result.children ?? []).map((n) => [
+      n.id,
+      { x: n.x ?? 0, y: n.y ?? 0, w: n.width ?? 0, h: n.height ?? 0 },
+    ]),
   ),
   polylines: new Map(
     (result.edges ?? []).map((e) => {
-      const s = e.sections?.[0]; // flat graphs route one section per edge
-      return [e.id, s ? [s.startPoint, ...(s.bendPoints ?? []), s.endPoint] : []];
+      const s = e?.sections?.[0]; // flat graphs route one section per edge
+      return [e?.id ?? "", s ? [s.startPoint, ...(s.bendPoints ?? []), s.endPoint] : []];
     }),
   ),
 });

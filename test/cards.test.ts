@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cardSize, intersect, pointOnRect, trimEnds } from "../web/cards.js";
+import { CARD_FONT, cardSize, intersect, pointOnRect, serverCtx } from "../src/cards";
 
 // measuring stub: 0.5 * fontsize per char, so width scales with the font like
 // a real canvas
@@ -17,6 +17,24 @@ describe("cardSize", () => {
     const ctx = mkCtx();
     expect(cardSize(T7, ctx)).toEqual({ w: 66, h: 26 });
     expect(cardSize("ab", ctx)).toEqual({ w: 40, h: 26 }); // under the min
+  });
+});
+
+describe("serverCtx (server-side measureText for the SSR graph)", () => {
+  test("Helvetica widths: wide glyphs measure wider than narrow ones", () => {
+    const w = (t: string) => serverCtx.measureText(t).width;
+    expect(w("WWW")).toBeGreaterThan(w("iii") * 2);
+    expect(w("m")).toBeGreaterThan(w("i") * 3);
+    expect(w("0")).toBeCloseTo(556 * (CARD_FONT / 1000), 5); // digits are 556 units
+  });
+  test("non-table glyphs (Cyrillic) take the 0.6em fallback, generous not tight", () => {
+    expect(serverCtx.measureText("ж").width).toBeCloseTo(0.6 * CARD_FONT, 9);
+  });
+  test("cardSize with serverCtx: measure + 24 padding, min 40", () => {
+    expect(cardSize("package-publication", serverCtx)).toEqual({
+      w: serverCtx.measureText("package-publication").width + 24,
+      h: 26,
+    });
   });
 });
 
@@ -45,80 +63,5 @@ describe("pointOnRect", () => {
     expect(pointOnRect({ x: 25, y: 31.5 }, r, 1)).toBeFalse(); // beyond eps
     expect(pointOnRect({ x: 25, y: 38 }, r, 1)).toBeFalse(); // 8px short (audit)
     expect(pointOnRect({ x: 2, y: 25 }, r, 1)).toBeFalse(); // 8px lateral miss
-  });
-});
-
-describe("trimEnds", () => {
-  // legacy pure gate fn: documents the AC11 reattach rule from the canvas era;
-  // the svg painter never calls it (one coordinate world — ends cannot detach)
-  const src = { x: 100, y: 21, w: 40, h: 8 };
-  const dst = { x: 100, y: 101, w: 40, h: 8 };
-  const orthogonal = (poly: { x: number; y: number }[]) =>
-    poly.slice(0, -1).every((p, i) => {
-      const q = poly[i + 1];
-      return !!q && (p.x === q.x || p.y === q.y);
-    });
-
-  test("the audit's 8px float: both ends clamp onto the rect boundary", () => {
-    const poly = trimEnds(
-      [
-        { x: 120, y: 13 }, // 8px above the src top
-        { x: 120, y: 60 },
-        { x: 120, y: 93 }, // 8px above the dst top
-      ],
-      src,
-      dst,
-    );
-    expect(poly).toEqual([
-      { x: 120, y: 21 },
-      { x: 120, y: 60 },
-      { x: 120, y: 101 },
-    ]);
-    const [a] = poly;
-    const z = poly.at(-1);
-    expect(a && pointOnRect(a, src, 1)).toBeTrue();
-    expect(z && pointOnRect(z, dst, 1)).toBeTrue();
-  });
-
-  test("lateral miss (audit #3): clamp + elbow, every segment stays axis-aligned", () => {
-    const poly = trimEnds(
-      [
-        { x: 90, y: 25 }, // 10px LEFT of the src x-range
-        { x: 90, y: 60 },
-        { x: 120, y: 60 },
-        { x: 120, y: 93 },
-      ],
-      src,
-      dst,
-    );
-    expect(poly[0]).toEqual({ x: 100, y: 25 }); // onto the left edge
-    expect(orthogonal(poly)).toBeTrue();
-    const end = poly.at(-1);
-    expect(end && pointOnRect(end, dst, 1)).toBeTrue();
-  });
-
-  test("a two-point edge clamped at both ends still comes out orthogonal", () => {
-    const poly = trimEnds(
-      [
-        { x: 90, y: 13 },
-        { x: 150, y: 93 },
-      ],
-      src,
-      dst,
-    );
-    expect(orthogonal(poly)).toBeTrue();
-    const [a] = poly;
-    const z = poly.at(-1);
-    expect(a && pointOnRect(a, src, 1)).toBeTrue();
-    expect(z && pointOnRect(z, dst, 1)).toBeTrue();
-  });
-
-  test("short polylines pass through; already-attached ends are untouched", () => {
-    expect(trimEnds([{ x: 0, y: 0 }], src, dst)).toEqual([{ x: 0, y: 0 }]);
-    const ok = [
-      { x: 120, y: 21 },
-      { x: 120, y: 101 },
-    ];
-    expect(trimEnds(ok, src, dst)).toEqual(ok);
   });
 });

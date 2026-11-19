@@ -1,266 +1,62 @@
 #!/usr/bin/env bun
-// CDP probe for the web layer: one NEW chrome tab per run (127.0.0.1:9222),
-// RAF-shimmed (background tabs have dead RAF), console/exception-capturing.
+// Probe for the server-rendered viewer. Geometry ACs (ac7, ac9-14, ac12) are
+// CURL-LEVEL: fetch the route, parse the SVG attributes out of the served
+// HTML, verdict — no CDP. CDP (127.0.0.1:9222, one NEW tab per run,
+// RAF-shimmed, console/exception-capturing) stays ONLY for screen truth
+// (ac1/ac2/ac3), the wheel interaction (ac5) and --canvas screenshots; ac4
+// labels go to vision on the dumps. Exit 1 on ANY failed AC or console error.
+//
 // Usage: bun tools/probe.mjs <url> [--settle-ms N] [--eval '<js>'] [--canvas out.png] [--ac]
 //        [--viewport WxH]  — CDP Emulation.setDeviceMetricsOverride before nav
-// JSON report → stdout; exit 1 on ANY console error or uncaught exception.
-// --ac: operator acceptance gate AC1-AC13 (AC4 labels → vision, out of probe).
-// --canvas: full-page png screenshot (Page.captureScreenshot, svg renderer).
+// JSON report → stdout.
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { cardSize, intersect, pointOnRect, serverCtx } from "../src/cards.ts";
 
-export const DEFAULT_EVAL = `(() => {
-  const g = document.querySelector('tsk-graph');
-  const svg = g && g.querySelector('svg');
-  if (!svg) return { svg: false };
-  const cards = [...svg.querySelectorAll('g.card')];
-  const xs = cards.map((c) => Number(c.dataset.x));
-  const ys = cards.map((c) => Number(c.dataset.y));
-  return {
-    svg: true,
-    w: Number(svg.getAttribute('width')),
-    h: Number(svg.getAttribute('height')),
-    viewBox: svg.getAttribute('viewBox'),
-    nodes: cards.length,
-    links: svg.querySelectorAll('path.edge').length,
-    ySpread: ys.length ? Math.round(Math.max(...ys) - Math.min(...ys)) : 0,
-    xSpread: xs.length ? Math.round(Math.max(...xs) - Math.min(...xs)) : 0,
-  };
-})()`;
+export const DEFAULT_EVAL = `(() => ({ title: document.title }))()`;
 
-// AC1-AC3, AC7-AC12 state gathering. Screen truth comes straight from the
-// browser (getBoundingClientRect — viewBox fit + zoom transform, whatever the
-// css did); layout truth from the data-* attrs carrying raw elk coordinates.
-export const AC_STATE_EVAL = `(() => {
-  const g = document.querySelector('tsk-graph');
-  if (!g) return { fatal: 'tsk-graph missing' };
-  const svg = g.querySelector('svg');
-  if (!svg) return { fatal: 'svg missing' };
-  const cards = globalThis.tskCards;
-  if (!cards) return { fatal: 'tskCards hook missing' };
-  // AC7/AC10/AC11 zero-links semantics: the raw corpus edge count (pre-filter,
-  // pre-merge) decides whether zero painted links is the contract or a defect
-  const corpusEdges = document.querySelector('tsk-app')?.state?.snap?.edges?.length ?? null;
-  // AC9: elk-space card rects as painted (data attrs = mapLayout output)
-  const cardEls = [...svg.querySelectorAll('g.card')];
-  const rects = cardEls.map((c) => ({
-    path: String(c.dataset.path),
-    id: String(c.dataset.path).split('/').pop(),
-    x: Number(c.dataset.x), y: Number(c.dataset.y),
-    w: Number(c.dataset.w), h: Number(c.dataset.h),
-  }));
-  const overlaps = [];
-  for (let i = 0; i < rects.length; i++)
-    for (let j = i + 1; j < rects.length; j++)
-      if (cards.intersect(rects[i], rects[j]))
-        overlaps.push(rects[i].id + '×' + rects[j].id);
-  const R = (v) => Math.round(v * 10) / 10;
+// screen truth stays in the browser (ac1 fit, ac2 spread, ac3 drawn): the CSS
+// box and getBoundingClientRect — viewBox fit + zoom transform, whatever the
+// css did. Layout truth (geometry) is curl-side, off the data-* attrs.
+export const SCREEN_EVAL = `(() => {
+  const svg = document.querySelector('svg[data-zoom]');
+  if (!svg) return { noGraph: true };
+  const box = svg.closest('.tsk-graph');
   const sb = svg.getBoundingClientRect();
-  const pts = cardEls.map((c) => {
+  const bb = (box ?? svg).getBoundingClientRect();
+  const pts = [...svg.querySelectorAll('g.card')].map((c) => {
     const b = c.getBoundingClientRect();
     return { id: String(c.dataset.path).split('/').pop(), x: b.x + b.width / 2, y: b.y + b.height / 2 };
   });
-  // AC10/AC11: painted edges ARE the elk polylines — parse the path d back.
-  // Bundled members paint PIECES (data-from/to kept) plus shared trunks
-  // (path.edge.trunk, no data attrs): geometry gates look at pieces only,
-  // the bus detector below looks at every horizontal on the painted DOM
-  const edgeEls = [...svg.querySelectorAll('path.edge:not(.trunk)')];
-  const short = (s) => String(s).split('/').pop();
-  // AC7: the cyclic pair must merge to exactly one undirected cycle edge —
-  // count DISTINCT unordered pairs among cyclic-a/cyclic-b pieces (a bundled
-  // pair paints 2 pieces + its trunk; it must still count between: 1)
-  const pairKey = (el) => [String(el.dataset.from), String(el.dataset.to)].sort().join('⇄');
-  const pairEdges = edgeEls.filter((p) => {
-    const f = String(p.dataset.from);
-    const t = String(p.dataset.to);
-    return (
-      (f.endsWith("cyclic-a.md") && t.endsWith("cyclic-b.md")) ||
-      (f.endsWith("cyclic-b.md") && t.endsWith("cyclic-a.md"))
-    );
-  });
-  const cyclePairCount = (els) => new Set(els.map(pairKey)).size;
-  const byPath = new Map(rects.map((r) => [r.path, r]));
-  const gap = (p, r) => Math.max(r.x - p.x, p.x - r.x - r.w, r.y - p.y, p.y - r.y - r.h, 0);
-  // AC11 piece semantics: a piece's OUTER endpoint sits 0-gap on its card
-  // rect; its INNER endpoint sits ON a trunk (y at the trunk line, x inside
-  // its span) — no false :src/:dst fails on bundled pieces
-  const trunkSegs = [...svg.querySelectorAll('path.edge.trunk')].flatMap((el) => {
-    const m = [...el.getAttribute('d').matchAll(/[ML](-?[\\d.]+) (-?[\\d.]+)/g)];
-    return m.length === 2
-      ? [{ y: Number(m[0][2]), x0: Math.min(Number(m[0][1]), Number(m[1][1])), x1: Math.max(Number(m[0][1]), Number(m[1][1])) }]
-      : [];
-  });
-  const onTrunk = (pt) =>
-    trunkSegs.some((t) => Math.abs(pt.y - t.y) <= 1 && pt.x >= t.x0 - 1 && pt.x <= t.x1 + 1);
-  const edgeIssues = [];
-  const attach = [];
-  const attachIssues = [];
-  const piecePolys = []; // parsed once here, reused by the AC14 member scan
-  for (const p of edgeEls) {
-    const name = short(p.dataset.from) + '→' + short(p.dataset.to);
-    const poly = [...p.getAttribute('d').matchAll(/[ML](-?[\\d.]+) (-?[\\d.]+)/g)].map((m) => ({
-      x: Number(m[1]), y: Number(m[2]),
-    }));
-    piecePolys.push({ el: p, poly });
-    if (poly.length < 2) { edgeIssues.push(name + ':no-polyline'); continue; }
-    for (let i = 0; i + 1 < poly.length; i++)
-      if (Math.abs(poly[i].x - poly[i + 1].x) > 1e-9 && Math.abs(poly[i].y - poly[i + 1].y) > 1e-9)
-        edgeIssues.push(name + ':diagonal');
-    const sr = byPath.get(p.dataset.from);
-    const dr = byPath.get(p.dataset.to);
-    const last = poly[poly.length - 1];
-    attach.push(name + '+' + (sr && dr ? R(gap(poly[0], sr)) + '/' + R(gap(last, dr)) : '?/?'));
-    if (!sr || !(cards.pointOnRect(poly[0], sr, 1) || onTrunk(poly[0]))) attachIssues.push(name + ':src');
-    if (!dr || !(cards.pointOnRect(last, dr, 1) || onTrunk(last))) attachIssues.push(name + ':dst');
-  }
-  // AC13 edge buses: every horizontal segment on the painted DOM (pieces,
-  // identity edges, trunks), grouped by y-band ±20 with transitive x-overlap
-  // WITHIN ONE KIND — per-kind bundling stacks hard/soft trunks side by side
-  // in one visual corridor, so the invariant is one horizontal PER KIND per
-  // band; same-kind horizontals sharing a band stay an unbundled bus
-  const kindOf = (el) =>
-    ['hard', 'soft', 'cycle'].find((k) => el.classList.contains(k)) ?? '?';
-  const segs = [];
-  for (const el of svg.querySelectorAll('path.edge')) {
-    const poly = [...el.getAttribute('d').matchAll(/[ML](-?[\\d.]+) (-?[\\d.]+)/g)].map((m) => ({
-      x: Number(m[1]), y: Number(m[2]),
-    }));
-    for (let i = 0; i + 1 < poly.length; i++)
-      if (Math.abs(poly[i].y - poly[i + 1].y) < 1e-9 && Math.abs(poly[i].x - poly[i + 1].x) > 1e-9)
-        segs.push({
-          y: poly[i].y,
-          x0: Math.min(poly[i].x, poly[i + 1].x),
-          x1: Math.max(poly[i].x, poly[i + 1].x),
-          kind: kindOf(el),
-        });
-  }
-  const par = segs.map((_, i) => i);
-  const find = (i) => {
-    while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; }
-    return i;
-  };
-  for (let a = 0; a < segs.length; a++)
-    for (let b = a + 1; b < segs.length; b++)
-      if (
-        segs[a].kind === segs[b].kind &&
-        Math.abs(segs[a].y - segs[b].y) <= 20 && segs[a].x0 < segs[b].x1 && segs[b].x0 < segs[a].x1
-      )
-        par[find(a)] = find(b);
-  const groups = new Map();
-  segs.forEach((s, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), s]));
-  const buses = [...groups.values()]
-    .filter((g) => g.length > 1)
-    .map((g) => g.map((s) => Math.round(s.y) + ':' + Math.round(s.x0) + '→' + Math.round(s.x1)));
-  // AC14 per-kind bundles + shared drops + legend: member stubs per trunk
-  // share ONE kind; per (source card, trunk) exactly one drop x (centre
-  // snapping) and per EDGE exactly one rise x — several relations may attach
-  // along one wide target border, each at its own x; legend box with three
-  // samples lives on the graph view
-  const legendEl = g.querySelector('.tsk-legend');
-  const members = trunkSegs.map(() => ({ kinds: new Set(), drops: new Map(), rises: new Map() }));
-  for (const { el: p, poly } of piecePolys) {
-    for (let ti = 0; ti < trunkSegs.length; ti++) {
-      const t = trunkSegs[ti];
-      const free = poly.filter(
-        (pt) => !(Math.abs(pt.y - t.y) <= 1 && pt.x >= t.x0 - 1 && pt.x <= t.x1 + 1),
-      );
-      if (free.length === poly.length || free.length === 0) continue; // not a member / connector
-      const m = members[ti];
-      m.kinds.add(kindOf(p));
-      const fr = byPath.get(String(p.dataset.from));
-      const to = byPath.get(String(p.dataset.to));
-      const put = (map, id, pt) => map.set(id, [...(map.get(id) ?? []), Math.round(pt.x)]);
-      const ek = short(p.dataset.from) + '→' + short(p.dataset.to); // per-edge rise key
-      for (const pt of free) {
-        if (fr && cards.pointOnRect(pt, fr, 1)) put(m.drops, String(p.dataset.from), pt);
-        if (to && cards.pointOnRect(pt, to, 1)) put(m.rises, ek, pt);
-      }
-    }
-  }
-  const bundles = {
-    legend: {
-      present: !!legendEl,
-      samples: legendEl ? legendEl.querySelectorAll('path.edge').length : 0,
-    },
-    trunkCount: trunkSegs.length,
-    mixed: members.map((m, i) => (m.kinds.size > 1 ? i : -1)).filter((i) => i >= 0),
-    multiDrop: members.flatMap((m, ti) => [
-      ...[...m.drops]
-        .filter(([, xs]) => new Set(xs).size > 1)
-        .map(([id, xs]) => 'drop ' + short(id) + '@t' + ti + ':' + xs.join(',')),
-      ...[...m.rises]
-        .filter(([, xs]) => new Set(xs).size > 1)
-        .map(([id, xs]) => 'rise ' + short(id) + '@t' + ti + ':' + xs.join(',')),
-    ]),
-  };
-  // AC12: full titles — no canvas-era ellipsis cutoff, and the painted text fits
-  // the rect sized for it (data-w - 4 = the BAR allowance on both sides of
-  // the middle anchor, same margin graph.js reserves via cardSize padding)
-  const titleFit = { cards: 0, ellipsis: [], wide: [] };
-  for (const c of cardEls) {
-    const t = c.querySelector('text');
-    if (!t) continue;
-    titleFit.cards++;
-    const id = String(c.dataset.path).split('/').pop();
-    if (String(t.textContent).includes('…')) titleFit.ellipsis.push(id);
-    const slack = Number(c.dataset.w) - 4 - t.getBBox().width;
-    if (!(slack >= 0)) titleFit.wide.push(id + '+' + R(-slack));
-  }
   return {
-    elem: { w: g.clientWidth, h: g.clientHeight },
-    view: { w: svg.clientWidth, h: svg.clientHeight },
+    elem: { w: Math.round(bb.width), h: Math.round(bb.height) },
+    view: { w: Math.round(sb.width), h: Math.round(sb.height) },
     nodes: pts.length,
-    links: edgeEls.length,
-    corpusEdges,
-    edgeIssues,
-    bbox: pts.length
-      ? {
-          x0: Math.min(...pts.map((p) => p.x)),
-          x1: Math.max(...pts.map((p) => p.x)),
-          y0: Math.min(...pts.map((p) => p.y)),
-          y1: Math.max(...pts.map((p) => p.y)),
-        }
-      : null,
-    distinct: new Set(pts.map((p) => R(p.x) + ',' + R(p.y))).size,
+    distinct: new Set(pts.map((p) => Math.round(p.x) + ',' + Math.round(p.y))).size,
+    bbox: pts.length ? {
+      x0: Math.min(...pts.map((p) => p.x)), x1: Math.max(...pts.map((p) => p.x)),
+      y0: Math.min(...pts.map((p) => p.y)), y1: Math.max(...pts.map((p) => p.y)),
+    } : null,
     outside: pts
       .filter((p) => !(p.x >= sb.x && p.x <= sb.x + sb.width && p.y >= sb.y && p.y <= sb.y + sb.height))
       .map((p) => p.id),
-    cycleLinks: svg.querySelectorAll('path.edge.broken').length,
-    cyclePair: {
-      between: cyclePairCount(pairEdges),
-      cycleKind: cyclePairCount(pairEdges.filter((p) => p.classList.contains('cycle'))),
-    },
-    zoom: svg.__zoom ? svg.__zoom.k : null,
-    overlaps,
-    attach,
-    attachIssues,
-    bus: { horizontals: segs.length, corridors: groups.size, buses },
-    bundles,
-    titleFit,
   };
 })()`;
 
-// AC5 interaction: synthetic wheel ±100 at the svg centre. Node drag is gone
-// by design — the elk layout is authoritative, so wheel/pinch/dblclick zoom
-// plus background pan (d3.zoom on the svg, transform on svg.__zoom) is the
-// interaction surface.
-export const AC_INTERACT_EVAL = `(() => {
-  const g = document.querySelector('tsk-graph');
-  if (!g) return { fatal: 'tsk-graph missing' };
-  const svg = g.querySelector('svg');
-  if (!svg) return { fatal: 'svg missing' };
+// AC5 interaction: synthetic wheel ±100 at the svg centre (d3.zoom stores the
+// live transform on svg.__zoom). Node drag is gone by design — the elk layout
+// is authoritative; wheel/pinch/dblclick zoom + background pan is the surface.
+export const INTERACT_EVAL = `(() => {
+  const svg = document.querySelector('svg[data-zoom]');
+  if (!svg) return { noGraph: true };
   const r = svg.getBoundingClientRect();
   const wheel = (dy) =>
     svg.dispatchEvent(
       new WheelEvent('wheel', {
-        bubbles: true,
-        cancelable: true,
-        clientX: r.left + r.width / 2,
-        clientY: r.top + r.height / 2,
-        deltaX: 0,
-        deltaY: dy,
-        view: window,
+        bubbles: true, cancelable: true,
+        clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+        deltaX: 0, deltaY: dy, view: window,
       }),
     );
   const k = () => (svg.__zoom ? svg.__zoom.k : null);
@@ -272,61 +68,309 @@ export const AC_INTERACT_EVAL = `(() => {
   return { z0, z1, z2 };
 })()`;
 
+const decode = (s) =>
+  s
+    .replaceAll("&apos;", "'")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+const short = (p) => String(p).split("/").pop();
+
+/** parse the SERVED html: geometry state off the svg attributes we emitted */
+export const parseGraphHtml = (html) => {
+  const svg = /<svg data-zoom data-edges="(\d+)" viewBox="([^"]+)"/.exec(html);
+  if (!svg) return { graph: false };
+  const corpusEdges = Number(svg[1] ?? 0);
+  const cards = [
+    ...html.matchAll(
+      /<g class="card ([^"]*)" data-path="([^"]*)" data-x="(-?[\d.]+)" data-y="(-?[\d.]+)" data-w="([\d.]+)" data-h="([\d.]+)"[^>]*>([\s\S]*?)<\/g>/g,
+    ),
+  ].map((m) => ({
+    cls: m[1] ?? "",
+    path: decode(m[2] ?? ""),
+    x: Number(m[3]),
+    y: Number(m[4]),
+    w: Number(m[5]),
+    h: Number(m[6]),
+    title: decode(/<text[^>]*>([^<]*)<\/text>/.exec(m[7] ?? "")?.[1] ?? ""),
+  }));
+  const byPath = new Map(cards.map((c) => [c.path, c]));
+  const paths = [...html.matchAll(/<path class="edge([^"]*)"([^>]*)d="([^"]+)"/g)].map((m) => {
+    const cls = (m[1] ?? "").trim().split(/\s+/);
+    return {
+      trunk: cls.includes("trunk"),
+      kind: ["hard", "soft", "cycle"].find((k) => cls.includes(k)) ?? "?",
+      from: decode(/data-from="([^"]*)"/.exec(m[2] ?? "")?.[1] ?? "") || null,
+      to: decode(/data-to="([^"]*)"/.exec(m[2] ?? "")?.[1] ?? "") || null,
+      poly: [...(m[3] ?? "").matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((p) => ({
+        x: Number(p[1]),
+        y: Number(p[2]),
+      })),
+    };
+  });
+  const pieces = paths.filter((p) => !p.trunk);
+  const trunks = paths.filter((p) => p.trunk);
+
+  // ac9: card rects as painted (data attrs = mapLayout output)
+  const overlaps = [];
+  for (let i = 0; i < cards.length; i++)
+    for (let j = i + 1; j < cards.length; j++)
+      if (intersect(cards[i], cards[j]))
+        overlaps.push(short(cards[i].path) + "×" + short(cards[j].path));
+
+  // ac10/ac11: painted pieces parse back to polylines; endpoints sit on the
+  // card rect (eps 1) or ON a trunk line (y at the trunk, x in its span)
+  const trunkSegs = trunks
+    .map((t) => t.poly)
+    .filter((poly) => poly.length === 2)
+    .map((poly) => ({
+      y: poly[0].y,
+      x0: Math.min(poly[0].x, poly[1].x),
+      x1: Math.max(poly[0].x, poly[1].x),
+    }));
+  const onTrunk = (pt) =>
+    trunkSegs.some((t) => Math.abs(pt.y - t.y) <= 1 && pt.x >= t.x0 - 1 && pt.x <= t.x1 + 1);
+  const edgeIssues = [];
+  const attachIssues = [];
+  for (const p of pieces) {
+    const name = short(p.from) + "→" + short(p.to);
+    const poly = p.poly;
+    if (poly.length < 2) {
+      edgeIssues.push(name + ":no-polyline");
+      continue;
+    }
+    for (let i = 0; i + 1 < poly.length; i++)
+      if (Math.abs(poly[i].x - poly[i + 1].x) > 1e-9 && Math.abs(poly[i].y - poly[i + 1].y) > 1e-9)
+        edgeIssues.push(name + ":diagonal");
+    const sr = p.from ? byPath.get(p.from) : undefined;
+    const dr = p.to ? byPath.get(p.to) : undefined;
+    const first = poly[0];
+    const last = poly.at(-1);
+    if (!first || (!sr && p.from) || !(pointOnRect(first, sr ?? first, 1) || onTrunk(first)))
+      attachIssues.push(name + ":src");
+    if (!last || (!dr && p.to) || !(pointOnRect(last, dr ?? last, 1) || onTrunk(last)))
+      attachIssues.push(name + ":dst");
+  }
+
+  // ac7: the merge contract generalized — every painted unordered pair carries
+  // exactly ONE direction (mutual hard would paint two; a merged deadlock
+  // paints one cycle-kind edge). The fixture cyclic pair stays in the payload
+  // as the original canary.
+  const pairKey = (p) => [p.from, p.to].filter(Boolean).sort().join("⇄");
+  const dirKey = (p) => `${p.from}→${p.to}`;
+  const dirsPerPair = new Map();
+  for (const p of pieces) {
+    if (!p.from || !p.to) continue;
+    dirsPerPair.set(pairKey(p), new Set([...(dirsPerPair.get(pairKey(p)) ?? []), dirKey(p)]));
+  }
+  const multiPair = [...dirsPerPair].filter(([, dirs]) => dirs.size > 1).map(([pair]) => pair);
+  const pairEdges = pieces.filter(
+    (p) =>
+      p.from &&
+      p.to &&
+      ((p.from.endsWith("cyclic-a.md") && p.to.endsWith("cyclic-b.md")) ||
+        (p.from.endsWith("cyclic-b.md") && p.to.endsWith("cyclic-a.md"))),
+  );
+  const count = (els) => new Set(els.map(pairKey)).size;
+  const cyclePair = {
+    between: count(pairEdges),
+    cycleKind: count(pairEdges.filter((p) => p.kind === "cycle")),
+  };
+
+  // ac13: every horizontal on the painted page (pieces, identity edges,
+  // trunks) grouped by y-band ±20 with transitive x-overlap WITHIN ONE KIND —
+  // per-kind bundling stacks hard/soft trunks side by side in one visual
+  // corridor, so the invariant is one horizontal PER KIND per band
+  const segs = [];
+  for (const p of paths)
+    for (let i = 0; i + 1 < p.poly.length; i++)
+      if (
+        Math.abs(p.poly[i].y - p.poly[i + 1].y) < 1e-9 &&
+        Math.abs(p.poly[i].x - p.poly[i + 1].x) > 1e-9
+      )
+        segs.push({
+          y: p.poly[i].y,
+          x0: Math.min(p.poly[i].x, p.poly[i + 1].x),
+          x1: Math.max(p.poly[i].x, p.poly[i + 1].x),
+          kind: p.kind,
+        });
+  const par = segs.map((_, i) => i);
+  const find = (x) => {
+    let i = x;
+    while (par[i] !== i) {
+      par[i] = par[par[i]];
+      i = par[i];
+    }
+    return i;
+  };
+  for (let a = 0; a < segs.length; a++)
+    for (let b = a + 1; b < segs.length; b++)
+      if (
+        segs[a].kind === segs[b].kind &&
+        Math.abs(segs[a].y - segs[b].y) <= 20 &&
+        segs[a].x0 < segs[b].x1 &&
+        segs[b].x0 < segs[a].x1
+      )
+        par[find(a)] = find(b);
+  const groups = new Map();
+  segs.forEach((s, i) => {
+    groups.set(find(i), [...(groups.get(find(i)) ?? []), s]);
+  });
+  const buses = [...groups.values()]
+    .filter((g) => g.length > 1)
+    .map((g) => g.map((s) => Math.round(s.y) + ":" + Math.round(s.x0) + "→" + Math.round(s.x1)));
+
+  // ac14: per-kind bundles + shared drops; legend with three samples
+  const legendSamples = (html.match(/tsk-legend-sample/g) ?? []).length;
+  const members = trunkSegs.map(() => ({ kinds: new Set(), drops: new Map(), rises: new Map() }));
+  for (const p of pieces) {
+    for (let ti = 0; ti < trunkSegs.length; ti++) {
+      const t = trunkSegs[ti];
+      const free = p.poly.filter(
+        (pt) => !(Math.abs(pt.y - t.y) <= 1 && pt.x >= t.x0 - 1 && pt.x <= t.x1 + 1),
+      );
+      if (free.length === p.poly.length || free.length === 0) continue; // not a member / connector
+      const m = members[ti];
+      m.kinds.add(p.kind);
+      const fr = p.from ? byPath.get(p.from) : undefined;
+      const to = p.to ? byPath.get(p.to) : undefined;
+      const ek = short(p.from) + "→" + short(p.to); // per-edge rise key
+      const put = (map, id, pt) => map.set(id, [...(map.get(id) ?? []), Math.round(pt.x)]);
+      for (const pt of free) {
+        if (fr && pointOnRect(pt, fr, 1)) put(m.drops, p.from, pt);
+        if (to && pointOnRect(pt, to, 1)) put(m.rises, ek, pt);
+      }
+    }
+  }
+  const bundles = {
+    legend: { present: /class="tsk-legend"/.test(html), samples: legendSamples },
+    trunkCount: trunkSegs.length,
+    mixed: members.map((m, i) => (m.kinds.size > 1 ? i : -1)).filter((i) => i >= 0),
+    multiDrop: members.flatMap((m, ti) => [
+      ...[...m.drops]
+        .filter(([, xs]) => new Set(xs).size > 1)
+        .map(([id, xs]) => "drop " + short(id) + "@t" + ti + ":" + xs.join(",")),
+      ...[...m.rises]
+        .filter(([, xs]) => new Set(xs).size > 1)
+        .map(([id, xs]) => "rise " + id + "@t" + ti + ":" + xs.join(",")),
+    ]),
+  };
+
+  // ac12: full titles, no ellipsis, rect sized by the SAME server cardSize fn
+  const titleFit = { cards: 0, ellipsis: [], wide: [] };
+  for (const c of cards) {
+    titleFit.cards++;
+    if (c.title.includes("…")) titleFit.ellipsis.push(short(c.path));
+    if (c.w !== cardSize(c.title, serverCtx).w)
+      titleFit.wide.push(short(c.path) + "+" + Math.round(c.w - cardSize(c.title, serverCtx).w));
+  }
+
+  return {
+    graph: true,
+    corpusEdges,
+    cards: cards.length,
+    links: pieces.length,
+    overlaps,
+    edgeIssues,
+    attachIssues,
+    cyclePair,
+    multiPair,
+    bus: { horizontals: segs.length, corridors: groups.size, buses },
+    bundles,
+    titleFit,
+  };
+};
+
+/** per-route content markers (SSR sanity for non-graph routes) */
+export const routeChecks = (pathname, html) => {
+  const article = html.slice(
+    html.indexOf('<article class="md">') + 1,
+    html.indexOf("<details>") - 1,
+  );
+  const checks = pathname.startsWith("/list")
+    ? { table: html.includes("<table"), rows: /<tbody>\s*<tr/.test(html) }
+    : pathname.startsWith("/next")
+      ? { "next items": html.includes("next-item") }
+      : pathname.startsWith("/graph")
+        ? { "graph svg": html.includes("<svg data-zoom") }
+        : pathname.startsWith("/doc/")
+          ? {
+              "doc article": html.includes('<article class="md">'),
+              "no frontmatter leak": !article.includes("status:"),
+            }
+          : { nav: html.includes("<nav>") };
+  return checks;
+};
+
 const finite = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const pct = (a, b) => (a === null || b === null || b === 0 ? null : Math.abs(a - b) / Math.abs(b));
+const NA = (note) => ({ pass: null, detail: { note } });
 
-// pure: state/interact/favicon payloads → AC1-AC13 verdicts (AC4 stays vision's)
-export const acResults = (state, interact, faviconStatus, consoleErrorCount, hexOffenders = []) => {
-  const fatal = state?.fatal ?? interact?.fatal ?? null;
+// pure: html/screen/interact payloads → AC1-AC14 verdicts (ac4 stays vision's)
+export const acResults = (
+  htmlState,
+  screen,
+  interact,
+  faviconStatus,
+  consoleErrorCount,
+  hexOffenders = [],
+) => {
+  const graph = htmlState?.graph === true;
+  const noGraph = NA("no graph on this route — n/a");
+  // a graph route MUST deliver its payloads; missing = fail, same as ever
+  const screenOk = graph ? !!screen && !screen.noGraph : true;
   const res = [
     {
       id: "ac1",
       name: "canvas-fit",
-      pass:
-        !!state?.view &&
-        finite(state.view.w / state.elem.w) >= 0.95 &&
-        finite(state.view.h / state.elem.h) >= 0.95,
-      detail: state?.view
-        ? {
-            view: state.view,
-            elem: state.elem,
-            ratioW: finite(state.view.w / state.elem.w),
-            ratioH: finite(state.view.h / state.elem.h),
-          }
-        : { fatal },
+      pass: !graph
+        ? noGraph.pass
+        : screenOk &&
+          !!screen?.view &&
+          !!screen?.elem &&
+          finite(screen.view.w / screen.elem.w) >= 0.95 &&
+          finite(screen.view.h / screen.elem.h) >= 0.95,
+      detail: !graph
+        ? noGraph.detail
+        : screen?.view && screen?.elem
+          ? { view: screen.view, elem: screen.elem }
+          : { fatal: "screen payload missing" },
     },
     {
       id: "ac2",
       name: "screen-spread",
-      pass:
-        !fatal &&
-        !!state?.bbox &&
-        !!state?.view &&
-        finite((state.bbox.y1 - state.bbox.y0) / state.view.h) >= 0.7 &&
-        finite((state.bbox.x1 - state.bbox.x0) / state.view.w) >= 0.5 &&
-        state.outside.length === 0,
+      pass: !graph
+        ? noGraph.pass
+        : screenOk &&
+          !!screen?.bbox &&
+          !!screen?.view &&
+          finite((screen.bbox.y1 - screen.bbox.y0) / screen.view.h) >= 0.7 &&
+          finite((screen.bbox.x1 - screen.bbox.x0) / screen.view.w) >= 0.5 &&
+          screen.outside.length === 0,
       detail:
-        fatal || !state?.bbox || !state?.view
-          ? { fatal }
+        !graph || !screen || screen.noGraph
+          ? noGraph.detail
           : {
-              coverH: finite((state.bbox.y1 - state.bbox.y0) / state.view.h),
-              coverW: finite((state.bbox.x1 - state.bbox.x0) / state.view.w),
-              outside: state.outside,
-              bbox: Object.fromEntries(Object.entries(state.bbox).map(([k, v]) => [k, finite(v)])),
+              coverH: finite((screen.bbox?.y1 - screen.bbox?.y0) / screen.view.h),
+              coverW: finite((screen.bbox?.x1 - screen.bbox?.x0) / screen.view.w),
+              outside: screen.outside,
             },
     },
     {
       id: "ac3",
       name: "all-drawn",
-      pass:
-        !fatal &&
-        !!state &&
-        state.nodes > 0 &&
-        state.distinct === state.nodes &&
-        state.outside.length === 0,
-      detail: state
-        ? { nodes: state.nodes, distinct: state.distinct, outside: state.outside }
-        : { fatal },
+      pass: !graph
+        ? noGraph.pass
+        : screenOk &&
+          !!screen &&
+          screen.nodes > 0 &&
+          screen.distinct === screen.nodes &&
+          screen.outside.length === 0,
+      detail:
+        !graph || !screen || screen.noGraph
+          ? noGraph.detail
+          : { nodes: screen.nodes, distinct: screen.distinct, outside: screen.outside },
     },
     {
       id: "ac4",
@@ -337,21 +381,21 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
     {
       id: "ac5",
       name: "wheel-zoom",
-      pass:
-        !fatal &&
-        !!interact &&
-        pct(finite(interact.z1), finite(interact.z0)) > 0.1 &&
-        pct(finite(interact.z2), finite(interact.z0)) <= 0.1,
-      detail: interact
-        ? {
-            z0: finite(interact.z0),
-            z1: finite(interact.z1),
-            z2: finite(interact.z2),
-            zoomInPct: pct(finite(interact.z1), finite(interact.z0)),
-            restorePct: pct(finite(interact.z2), finite(interact.z0)),
-            note: "node drag dropped — elk owns the layout; d3.zoom gives wheel/pinch/dblclick + pan",
-          }
-        : { fatal },
+      pass: !graph
+        ? noGraph.pass
+        : !!interact &&
+          !interact.noGraph &&
+          pct(finite(interact.z1), finite(interact.z0)) > 0.1 &&
+          pct(finite(interact.z2), finite(interact.z0)) <= 0.1,
+      detail:
+        !graph || !interact || interact.noGraph
+          ? noGraph.detail
+          : {
+              z0: finite(interact.z0),
+              z1: finite(interact.z1),
+              z2: finite(interact.z2),
+              note: "wheel/pinch/dblclick zoom + pan; elk owns the layout",
+            },
     },
     {
       id: "ac6",
@@ -366,15 +410,20 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
     {
       id: "ac7",
       name: "cycles-visible",
-      // merge contract: exactly ONE cycle edge between the pair, ZERO other
-      // edges between them (pre-merge DOM: 2 dotted + 1 solid + 1 dashed = 4);
-      // an edgeless corpus has no cycles to show — vacuous pass
-      pass:
-        !fatal &&
-        !!state &&
-        (state.corpusEdges === 0 ||
-          (state.cyclePair?.between === 1 && state.cyclePair?.cycleKind === 1)),
-      detail: state ? { cyclePair: state.cyclePair ?? null } : { fatal },
+      // merge contract, generalized off the painted page: every unordered pair
+      // paints ONE direction (a merged hard-mutual deadlock paints one cycle
+      // edge — two directions between a pair is pre-merge noise); edgeless
+      // corpora have nothing to merge — vacuous pass
+      pass: !graph
+        ? noGraph.pass
+        : htmlState.corpusEdges === 0 ||
+          (typeof htmlState.links === "number" &&
+            htmlState.links > 0 &&
+            Array.isArray(htmlState.multiPair) &&
+            htmlState.multiPair.length === 0),
+      detail: !graph
+        ? noGraph.detail
+        : { multiPair: htmlState.multiPair ?? null, cyclePair: htmlState.cyclePair ?? null },
     },
     {
       id: "ac8",
@@ -385,101 +434,91 @@ export const acResults = (state, interact, faviconStatus, consoleErrorCount, hex
     {
       id: "ac9",
       name: "no-card-overlap",
-      pass: !fatal && Array.isArray(state?.overlaps) && state.overlaps.length === 0,
-      detail: state ? { overlaps: state.overlaps ?? null } : { fatal },
+      pass: !graph
+        ? noGraph.pass
+        : Array.isArray(htmlState.overlaps) && htmlState.overlaps.length === 0,
+      detail: !graph ? noGraph.detail : { overlaps: htmlState.overlaps ?? null },
     },
     {
       id: "ac10",
       name: "orthogonal-edges",
-      pass:
-        !fatal &&
-        !!state &&
-        typeof state.links === "number" &&
-        // edgeless corpus: zero links IS the contract; edges present but
-        // unpainted stays the fail it always was
-        (state.links > 0 || state.corpusEdges === 0) &&
-        Array.isArray(state.edgeIssues) &&
-        state.edgeIssues.length === 0,
-      detail: state
-        ? { links: state?.links ?? null, edgeIssues: state?.edgeIssues ?? null }
-        : { fatal },
+      pass: !graph
+        ? noGraph.pass
+        : typeof htmlState.links === "number" &&
+          (htmlState.links > 0 || htmlState.corpusEdges === 0) &&
+          Array.isArray(htmlState.edgeIssues) &&
+          htmlState.edgeIssues.length === 0,
+      detail: !graph
+        ? noGraph.detail
+        : { links: htmlState.links ?? null, edgeIssues: htmlState.edgeIssues ?? null },
     },
     {
       id: "ac11",
       name: "edge-attach",
-      pass:
-        !fatal &&
-        !!state &&
-        typeof state.links === "number" &&
-        (state.links > 0 || state.corpusEdges === 0) && // same edgeless rule as ac10
-        Array.isArray(state.attachIssues) &&
-        state.attachIssues.length === 0,
-      detail: state
-        ? {
-            links: state?.links ?? null,
-            attach: state?.attach ?? null,
-            attachIssues: state?.attachIssues ?? null,
-          }
-        : { fatal },
+      pass: !graph
+        ? noGraph.pass
+        : typeof htmlState.links === "number" &&
+          (htmlState.links > 0 || htmlState.corpusEdges === 0) && // same edgeless rule as ac10
+          Array.isArray(htmlState.attachIssues) &&
+          htmlState.attachIssues.length === 0,
+      detail: !graph ? noGraph.detail : { attachIssues: htmlState.attachIssues ?? null },
     },
     {
       id: "ac12",
       name: "title-fit",
-      // full title rendered AND it fits the rect measured for it; a missing
-      // payload is a fail (same contract as ac9-ac11)
-      pass:
-        !fatal &&
-        !!state?.titleFit &&
-        state.titleFit.cards > 0 &&
-        Array.isArray(state.titleFit.ellipsis) &&
-        state.titleFit.ellipsis.length === 0 &&
-        Array.isArray(state.titleFit.wide) &&
-        state.titleFit.wide.length === 0,
-      detail: state?.titleFit ? state.titleFit : { fatal },
+      // full title rendered (no ellipsis) AND the rect width equals the same
+      // cardSize fn's answer for that title (24px padding by construction)
+      pass: !graph
+        ? noGraph.pass
+        : !!htmlState.titleFit &&
+          htmlState.titleFit.cards > 0 &&
+          htmlState.titleFit.ellipsis.length === 0 &&
+          htmlState.titleFit.wide.length === 0,
+      detail: !graph ? noGraph.detail : htmlState.titleFit,
     },
     {
       id: "ac13",
       name: "no-buses",
       // every y-band (±20) with x-overlap holds exactly ONE horizontal: the
-      // shared trunk. Missing payload is a fail, same contract as ac9-ac12;
-      // an edgeless corpus paints no horizontals — vacuous pass
-      pass:
-        !fatal &&
-        !!state?.bus &&
-        Array.isArray(state.bus.buses) &&
-        state.bus.buses.length === 0 &&
-        state.bus.horizontals === state.bus.corridors,
-      detail: state?.bus ?? { fatal },
+      // shared trunk. An edgeless corpus paints no horizontals — vacuous pass
+      pass: !graph
+        ? noGraph.pass
+        : !!htmlState.bus &&
+          Array.isArray(htmlState.bus.buses) &&
+          htmlState.bus.buses.length === 0 &&
+          htmlState.bus.horizontals === htmlState.bus.corridors,
+      detail: !graph ? noGraph.detail : htmlState.bus,
     },
     {
       id: "ac14",
       name: "bundle-homogeneity+legend",
       // per-kind trunks: member stubs of one trunk share ONE kind; one drop x
       // per (source card, trunk) and one rise x per EDGE (wide targets host
-      // several rises at different x); legend present with three samples.
-      // Missing payload is a fail, same contract as ac9-ac13
-      pass:
-        !fatal &&
-        !!state?.bundles &&
-        state.bundles.legend?.present === true &&
-        state.bundles.legend?.samples === 3 &&
-        Array.isArray(state.bundles.mixed) &&
-        state.bundles.mixed.length === 0 &&
-        Array.isArray(state.bundles.multiDrop) &&
-        state.bundles.multiDrop.length === 0,
-      detail: state?.bundles ?? { fatal },
+      // several rises at different x); legend present with three samples
+      pass: !graph
+        ? noGraph.pass
+        : !!htmlState.bundles &&
+          htmlState.bundles.legend?.present === true &&
+          htmlState.bundles.legend?.samples === 3 &&
+          Array.isArray(htmlState.bundles.mixed) &&
+          htmlState.bundles.mixed.length === 0 &&
+          Array.isArray(htmlState.bundles.multiDrop) &&
+          htmlState.bundles.multiDrop.length === 0,
+      detail: !graph ? noGraph.detail : htmlState.bundles,
     },
   ];
   return res.map((r) => ({ ...r, detail: JSON.parse(JSON.stringify(r.detail)) })); // NaN → null for a clean report
 };
 
-// AC8, repo side: every colour in the web layer flows from the vendored Open
-// Props css — web/*.js and index.html must carry no raw hex literals.
+// AC8, repo side: every colour in the client layer flows from the vendored
+// Open Props css — web assets must carry no raw hex literals.
 export const webHexOffenders = (webDir) =>
-  [...readdirSync(webDir).filter((f) => f.endsWith(".js")), "index.html"].flatMap((f) => {
-    const m = readFileSync(resolve(webDir, f), "utf8").match(/#[0-9a-fA-F]{3,8}\b/g);
-    return m ? [`${f}: ${m.join(" ")}`] : [];
-  });
+  readdirSync(webDir)
+    .filter((f) => f.endsWith(".js") || f.endsWith(".css"))
+    .flatMap((f) => {
+      const m = readFileSync(resolve(webDir, f), "utf8").match(/#[0-9a-fA-F]{3,8}\b/g);
+      return m ? [`${f}: ${m.join(" ")}`] : [];
+    });
 
 export const parseArgs = (argv) => {
   const v = {
@@ -531,6 +570,19 @@ export const parseArgs = (argv) => {
 };
 
 const run = async (args) => {
+  // 1. curl level: the page itself + favicon — geometry verdicts read this
+  const page = await fetch(args.url);
+  const html = await page.text();
+  let faviconStatus = null;
+  try {
+    faviconStatus = (await fetch(new URL("/favicon.ico", args.url))).status;
+  } catch {
+    faviconStatus = 0;
+  }
+  const htmlState = parseGraphHtml(html);
+  const checks = routeChecks(new URL(args.url).pathname, html);
+
+  // 2. CDP: screen truth + interaction + screenshots only
   const base = "http://127.0.0.1:9222";
   let r = await fetch(`${base}/json/new?url=about:blank`, { method: "PUT" });
   if (!r.ok) r = await fetch(`${base}/json/new?url=about:blank`); // older chromes need GET
@@ -592,7 +644,7 @@ const run = async (args) => {
     });
   }
   await send("Page.navigate", { url: args.url });
-  const settleMs = args.ac ? Math.max(args.settleMs, 5000) : args.settleMs; // engine cooldown + fit transition
+  const settleMs = args.ac ? Math.max(args.settleMs, 5000) : args.settleMs; // d3 zoom wiring + fonts
 
   let readyState = "";
   for (let i = 0; i < 30 && readyState !== "complete"; i++) {
@@ -621,17 +673,14 @@ const run = async (args) => {
 
   let evalResult = null;
   let ac = null;
+  let screen = null;
+  let interact = null;
   if (readyState === "complete" && args.ac) {
-    const state = await evaluate(AC_STATE_EVAL); // camera read BEFORE interaction mutates it
-    const interact = await evaluate(AC_INTERACT_EVAL);
-    let faviconStatus = null;
-    try {
-      faviconStatus = (await fetch(new URL("/favicon.ico", args.url))).status;
-    } catch {
-      faviconStatus = 0;
-    }
+    screen = await evaluate(SCREEN_EVAL); // camera read BEFORE interaction mutates it
+    interact = await evaluate(INTERACT_EVAL);
     ac = acResults(
-      state,
+      htmlState,
+      screen,
       interact,
       faviconStatus,
       consoleMessages.filter((c) => c.level === "error").length + exceptions.length,
@@ -657,6 +706,11 @@ const run = async (args) => {
   const report = {
     url: args.url,
     viewport: args.viewport,
+    status: page.status,
+    routeChecks: checks,
+    htmlGraph: htmlState.graph
+      ? { cards: htmlState.cards, links: htmlState.links, corpusEdges: htmlState.corpusEdges }
+      : false,
     readyState,
     settleMs,
     console: consoleMessages,
@@ -665,10 +719,12 @@ const run = async (args) => {
     ac,
     canvas,
     ok:
+      page.status === 200 &&
+      Object.values(checks).every(Boolean) &&
       readyState === "complete" &&
       exceptions.length === 0 &&
       consoleMessages.every((c) => c.level !== "error") &&
-      (ac === null || ac.every((r) => r.pass !== false)), // pass:null = deferred (AC4)
+      (ac === null || ac.every((a) => a.pass !== false)), // pass:null = deferred (ac4) or n/a (non-graph route)
   };
   console.log(JSON.stringify(report, null, 2));
   process.exit(report.ok ? 0 : 1);

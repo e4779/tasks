@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { discover } from "../src/discover";
 import { buildGraph } from "../src/graph";
+import { breakCycles } from "../src/graph-cycles";
 import { parseFile } from "../src/parse";
 import { snapshot } from "../src/serve";
-import { breakCycles } from "../web/graph-cycles.js";
 
 const fx = (name: string) => join(import.meta.dir, "fixtures", "tasks", name);
 

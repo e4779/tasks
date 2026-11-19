@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { bundleEdges } from "../web/edge-bundler.js";
-import { edgeId } from "../web/elk-adapter.js";
+import { bundleEdges } from "../src/edge-bundler";
+import { edgeId } from "../src/elk-adapter";
 
 type Pt = { x: number; y: number };
 type Rect = { x: number; y: number; w: number; h: number };

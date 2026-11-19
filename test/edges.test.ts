@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { discover } from "../src/discover";
+import { mergeEdges } from "../src/edges";
 import { buildGraph } from "../src/graph";
 import { parseFile } from "../src/parse";
 import { snapshot } from "../src/serve";
-import { mergeEdges } from "../web/edges.js";
 
 const fx = (name: string) => join(import.meta.dir, "fixtures", "tasks", name);
 const e = (from: string, to: string, kind: "soft" | "hard") => ({ from, to, kind });

@@ -1,0 +1,414 @@
+/* tsk viewer styles — colours come only from vendored Open Props tokens (AC8:
+   no raw hex anywhere); [data-theme=light] remaps the fixed ramp steps that
+   the switch files do not flip on their own (chips, bars, edges, links) */
+body {
+  margin: 0;
+  font:
+    14px / 1.45 system-ui,
+    sans-serif;
+  background: var(--surface-1);
+  color: var(--text-2);
+}
+nav {
+  display: flex;
+  gap: var(--size-1);
+  align-items: center;
+  padding: var(--size-2) var(--size-3);
+  border-bottom: 1px solid var(--surface-3);
+}
+nav ul {
+  display: flex;
+  gap: var(--size-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+nav a {
+  color: var(--text-2);
+  text-decoration: none;
+  padding: var(--size-1) 0.7rem;
+  border-radius: 6px;
+  transition:
+    color 0.2s var(--ease-2),
+    background-color 0.2s var(--ease-2);
+}
+nav a:hover {
+  background: var(--surface-3);
+}
+nav a[aria-current="page"] {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+#theme {
+  margin-left: auto;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--surface-3);
+  border-radius: 6px;
+  padding: var(--size-1) 0.6rem;
+  cursor: pointer;
+}
+#filters {
+  display: flex;
+  gap: var(--size-2);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--size-2) var(--size-3);
+}
+#q {
+  background: var(--surface-2);
+  color: inherit;
+  border: 1px solid var(--surface-3);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  min-width: 18rem;
+}
+button[data-chip] {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--surface-3);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+  transition:
+    color 0.2s var(--ease-2),
+    background-color 0.2s var(--ease-2),
+    border-color 0.2s var(--ease-2);
+}
+button[data-chip][aria-pressed="true"] {
+  color: var(--surface-1);
+}
+button[data-chip="pending"][aria-pressed="true"] {
+  background: var(--orange-6);
+  border-color: var(--orange-6);
+}
+button[data-chip="in-progress"][aria-pressed="true"] {
+  background: var(--blue-6);
+  border-color: var(--blue-6);
+}
+button[data-chip="done"][aria-pressed="true"] {
+  background: var(--green-6);
+  border-color: var(--green-6);
+}
+button[data-chip="cancelled"][aria-pressed="true"] {
+  background: var(--red-6);
+  border-color: var(--red-6);
+}
+main {
+  padding: 0 var(--size-3) var(--size-6);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th,
+td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--surface-3);
+}
+tbody tr:hover {
+  background: var(--surface-2);
+}
+tbody a {
+  color: var(--text-1);
+  text-decoration: none;
+}
+tbody a:hover {
+  text-decoration: underline;
+}
+.path {
+  color: var(--text-2);
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  word-break: break-all;
+}
+.st.pending {
+  color: var(--orange-6);
+}
+.st.in-progress {
+  color: var(--blue-6);
+}
+.st.done {
+  color: var(--green-6);
+}
+.st.cancelled {
+  color: var(--red-6);
+  text-decoration: line-through;
+}
+.st.none {
+  color: var(--gray-6);
+}
+.next-item {
+  display: flex;
+  gap: var(--size-3);
+  align-items: baseline;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.next-item a {
+  color: var(--text-1);
+  text-decoration: none;
+}
+.next-item a:hover {
+  text-decoration: underline;
+}
+.tsk-graph {
+  display: block;
+  position: relative;
+  max-height: 80vh;
+  background: var(--surface-1);
+  border: 1px solid var(--surface-3);
+  border-radius: 8px;
+  box-shadow: var(--shadow-2);
+}
+.tsk-graph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+}
+.tsk-graph .edge {
+  fill: none;
+  stroke-width: 1.5;
+}
+.tsk-graph .edge.trunk {
+  stroke: var(--gray-6);
+}
+.tsk-graph .edge.trunk.hard {
+  stroke: var(--blue-5);
+}
+.tsk-graph .edge.trunk.soft {
+  stroke: var(--gray-7);
+  stroke-dasharray: 5 4;
+}
+.tsk-graph .edge.trunk.cycle {
+  stroke: var(--red-6);
+  stroke-dasharray: none;
+}
+.tsk-graph .edge.hard {
+  stroke: var(--blue-5);
+}
+.tsk-graph .edge.soft {
+  stroke: var(--gray-7);
+  stroke-dasharray: 5 4;
+}
+.tsk-graph .edge.broken {
+  stroke: var(--red-5);
+  stroke-dasharray: 2 4;
+}
+.tsk-graph .edge.cycle {
+  stroke: var(--red-6);
+  stroke-dasharray: none;
+}
+.tsk-graph .tsk-legend {
+  position: absolute;
+  right: var(--size-3);
+  bottom: var(--size-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  padding: var(--size-2) var(--size-3);
+  background: var(--surface-2);
+  border: 1px solid var(--surface-3);
+  border-radius: 6px;
+  font-size: 0.85em;
+  color: var(--text-2);
+  pointer-events: none;
+}
+.tsk-graph .tsk-legend-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+}
+.tsk-graph .tsk-legend-sample {
+  display: block;
+}
+.tsk-graph .card {
+  cursor: pointer;
+}
+.tsk-graph .card .box {
+  fill: var(--surface-2);
+  stroke: var(--surface-4);
+}
+.tsk-graph .card.ghost .box {
+  stroke-dasharray: 3 3;
+}
+.tsk-graph .card.dim {
+  opacity: 0.4;
+}
+.tsk-graph .card .bar {
+  fill: var(--gray-6);
+}
+.tsk-graph .card.st-pending .bar {
+  fill: var(--orange-6);
+}
+.tsk-graph .card.st-in-progress .bar {
+  fill: var(--blue-6);
+}
+.tsk-graph .card.st-done .bar {
+  fill: var(--green-6);
+}
+.tsk-graph .card.st-cancelled .bar {
+  fill: var(--red-6);
+}
+.tsk-graph .card.st-blocked .bar {
+  fill: var(--indigo-6);
+}
+.tsk-graph .card.st-none .bar {
+  fill: var(--gray-6);
+}
+.tsk-graph .card text {
+  fill: var(--text-1);
+  font:
+    12px system-ui,
+    sans-serif;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.tsk-graph a {
+  text-decoration: none;
+}
+.tsk-empty {
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  font-size: 1rem;
+}
+.doc .back {
+  display: inline-block;
+  padding: var(--size-3) 0;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.doc pre {
+  white-space: pre-wrap;
+  background: var(--surface-1);
+  border: 1px solid var(--surface-3);
+  border-radius: 8px;
+  padding: var(--size-3);
+  box-shadow: var(--shadow-2);
+}
+.doc .doc-title {
+  color: var(--text-1);
+  font-size: 1.5rem;
+  margin: var(--size-2) 0;
+}
+.doc .md h1,
+.doc .md h2,
+.doc .md h3 {
+  color: var(--text-1);
+  margin: var(--size-4) 0 var(--size-2);
+  line-height: 1.25;
+}
+.doc .md h1 {
+  font-size: 1.4rem;
+}
+.doc .md h2 {
+  font-size: 1.25rem;
+}
+.doc .md h3 {
+  font-size: 1.1rem;
+}
+.doc .md p {
+  margin: var(--size-2) 0;
+}
+.doc .md ul,
+.doc .md ol {
+  margin: var(--size-2) 0;
+  padding-left: var(--size-5);
+}
+.doc .md li {
+  margin: var(--size-1) 0;
+}
+.doc .md li > input[type="checkbox"] {
+  margin-right: var(--size-2);
+  accent-color: var(--blue-6);
+}
+.doc .md a {
+  color: var(--blue-4);
+}
+.doc .md :not(pre) > code {
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0 0.3em;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+.doc details {
+  margin-top: var(--size-5);
+}
+.doc summary {
+  cursor: pointer;
+  color: var(--text-2);
+  padding: var(--size-2) 0;
+}
+
+/* light theme: the switch files flip surface/text vars, but the ~15 fixed
+   ramp steps below would fail on light (step-6 text on white ≈ 2.9:1,
+   gray-7 edges invisible) — higher steps for text (~-9), ~-8/-7 for fills */
+[data-theme="light"] button[data-chip="pending"][aria-pressed="true"] {
+  background: var(--orange-9);
+  border-color: var(--orange-9);
+}
+[data-theme="light"] button[data-chip="in-progress"][aria-pressed="true"] {
+  background: var(--blue-9);
+  border-color: var(--blue-9);
+}
+[data-theme="light"] button[data-chip="done"][aria-pressed="true"] {
+  background: var(--green-9);
+  border-color: var(--green-9);
+}
+[data-theme="light"] button[data-chip="cancelled"][aria-pressed="true"] {
+  background: var(--red-9);
+  border-color: var(--red-9);
+}
+[data-theme="light"] .st.pending {
+  color: var(--orange-9);
+}
+[data-theme="light"] .st.in-progress {
+  color: var(--blue-9);
+}
+[data-theme="light"] .st.done {
+  color: var(--green-9);
+}
+[data-theme="light"] .st.cancelled {
+  color: var(--red-9);
+}
+[data-theme="light"] .st.none {
+  color: var(--gray-7);
+}
+[data-theme="light"] .tsk-graph .card.st-pending .bar {
+  fill: var(--orange-8);
+}
+[data-theme="light"] .tsk-graph .card.st-in-progress .bar {
+  fill: var(--blue-8);
+}
+[data-theme="light"] .tsk-graph .card.st-done .bar {
+  fill: var(--green-8);
+}
+[data-theme="light"] .tsk-graph .card.st-cancelled .bar {
+  fill: var(--red-8);
+}
+[data-theme="light"] .tsk-graph .edge.hard,
+[data-theme="light"] .tsk-graph .edge.trunk.hard {
+  stroke: var(--blue-7);
+}
+[data-theme="light"] .tsk-graph .edge.soft,
+[data-theme="light"] .tsk-graph .edge.trunk.soft {
+  stroke: var(--gray-6);
+}
+[data-theme="light"] .tsk-graph .edge.broken {
+  stroke: var(--red-6);
+}
+[data-theme="light"] .tsk-graph .edge.cycle,
+[data-theme="light"] .tsk-graph .edge.trunk.cycle {
+  stroke: var(--red-7);
+}
+[data-theme="light"] .doc .md a {
+  color: var(--blue-7);
+}
+[data-theme="light"] .doc .md li > input[type="checkbox"] {
+  accent-color: var(--blue-7);
+}

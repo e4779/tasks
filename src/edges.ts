@@ -10,25 +10,22 @@
 //    package-publication ↔ ponytail-user-level cross-links painted as a
 //    "cycle" while neither card blocks the other)
 
-/** @typedef {Readonly<{from: string, to: string, kind: string}>} Edge */
+export type ViewEdge = Readonly<{ from: string; to: string; kind: string }>;
 
-const RANK = { soft: 0, hard: 1 };
+const RANK: Record<string, number> = { soft: 0, hard: 1 };
 
-/**
- * @param {readonly Edge[]} edges
- * @returns {Edge[]} merged list, stable first-occurrence order; a mutual
- *   pair emits its cycle edge at the lexicographically-smaller direction's
- *   slot (from < to), so the output is deterministic for any input order
- */
-export const mergeEdges = (edges) => {
-  const dir = new Map(); // "from\tto" → strongest edge
+/** merged list, stable first-occurrence order; a mutual pair emits its cycle
+ *   edge at the lexicographically-smaller direction's slot (from < to), so
+ *   the output is deterministic for any input order */
+export const mergeEdges = (edges: readonly ViewEdge[]): ViewEdge[] => {
+  const dir = new Map<string, ViewEdge>(); // "from\tto" → strongest edge
   for (const e of edges) {
     const k = `${e.from}\t${e.to}`;
     const prev = dir.get(k);
     if (!prev || (RANK[e.kind] ?? 0) > (RANK[prev.kind] ?? 0)) dir.set(k, e);
   }
-  const out = [];
-  const emitted = new Set(); // directional keys already merged into an output edge
+  const out: ViewEdge[] = [];
+  const emitted = new Set<string>(); // directional keys already merged into an output edge
   for (const e of dir.values()) {
     if (emitted.has(`${e.from}\t${e.to}`)) continue;
     const rev = dir.get(`${e.to}\t${e.from}`); // strongest opposite-direction edge
