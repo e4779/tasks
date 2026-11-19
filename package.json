@@ -2,11 +2,10 @@
   "name": "tsk",
   "type": "module",
   "bin": {
-    "tsk": "bin/tsk.ts"
+    "tsk": "dist/tsk.js"
   },
   "files": [
-    "bin",
-    "src",
+    "dist",
     "web",
     "skills",
     "README.md",
@@ -20,7 +19,9 @@
   "scripts": {
     "check": "tsc --noEmit",
     "check:full": "biome check . && tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "bun build ./bin/tsk.ts --outfile dist/tsk.js --target=node --external elkjs",
+    "prepare": "bun run build"
   },
   "dependencies": {
     "d3": "7",
