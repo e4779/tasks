@@ -240,6 +240,24 @@ tbody a:hover {
 .tsk-graph .card.dim {
   opacity: 0.4;
 }
+/* focus mode (operator 2026-11-20): all styling rides attributes — the svg
+   root carries data-focus="path", main.js marks the lit set (focused card,
+   its edges, 1-hop neighbours) with data-lit/data-focus; no class churn */
+.tsk-graph svg[data-focus] .card:not([data-lit]),
+.tsk-graph svg[data-focus] .edge:not([data-lit]) {
+  opacity: 0.15;
+}
+.tsk-graph svg[data-focus] .card[data-lit],
+.tsk-graph svg[data-focus] .edge[data-lit] {
+  opacity: 1;
+}
+.tsk-graph svg[data-focus] .card[data-focus] .box {
+  stroke: var(--blue-6);
+  /* screen-space outline: the viewBox world is hundreds of units wide, a bare
+     stroke-width would vanish at fit-zoom and balloon on small corpora */
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
 .tsk-graph .card .bar {
   fill: var(--gray-6);
 }
@@ -505,6 +523,9 @@ a.next:hover {
 [data-theme="light"] .tsk-graph .edge.cycle,
 [data-theme="light"] .tsk-graph .edge.trunk.cycle {
   stroke: var(--red-7);
+}
+[data-theme="light"] .tsk-graph svg[data-focus] .card[data-focus] .box {
+  stroke: var(--blue-7); /* blue-6 is too dark on the light surface */
 }
 [data-theme="light"] .doc .md a {
   color: var(--blue-7);

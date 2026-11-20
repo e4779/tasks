@@ -72,3 +72,27 @@ test("layout emits the wave C contract: nav links, both theme switches, dark def
   for (const e of [".edge.hard", ".edge.soft", ".edge.broken", ".edge.trunk"])
     expect(css).toContain(e);
 });
+
+test("focus mode contract: root data-focus state, drag threshold, esc/native-click guards, css dimming both themes", () => {
+  const js = readFileSync(join(root, "web/main.js"), "utf8");
+  for (const part of [
+    "svg.dataset.focus = path", // the root attribute is the whole state (probe contract)
+    "delete svg.dataset.focus", // Esc/background/same-card clear it
+    "Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4", // d3 pan never toggles focus
+    "e.metaKey || e.ctrlKey || e.shiftKey", // modified click = native new tab
+    "e.preventDefault()", // card click focuses instead of navigating
+    'e.key !== "Escape"', // esc unfocuses, resolved per event (swap-proof)
+    "bindFocus(svg)", // re-bound after the fragment swap together with zoom
+  ])
+    expect(js).toContain(part);
+  const css = readFileSync(join(root, "web/style.css"), "utf8");
+  for (const part of [
+    "svg[data-focus] .card:not([data-lit])", // dim to ~0.15 via attribute selectors
+    "svg[data-focus] .edge:not([data-lit])",
+    "opacity: 0.15",
+    "opacity: 1", // lit set back to full
+    "vector-effect: non-scaling-stroke", // outline stays 2px at any zoom
+    '[data-theme="light"] .tsk-graph svg[data-focus]', // accent remapped for light
+  ])
+    expect(css).toContain(part);
+});

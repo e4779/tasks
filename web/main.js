@@ -7,6 +7,57 @@ document.getElementById("theme")?.addEventListener("click", () => {
   localStorage.setItem("theme", root.dataset.theme);
 });
 
+// focus mode (operator 2026-11-20): the whole state is svg[data-focus="path"]
+// on the root (what the probe reads); style.css dims everything under it via
+// attribute selectors. The lit set itself cannot live in css — css has no
+// cross-element attribute-value equality ([a=x] can't match [data-focus]=x on
+// another element) — so the toggle materialises data-lit / data-focus markers
+// per element and css styles those. shortcut: per-element attribute writes on
+// each toggle; upgrade if css ever gains cross-element value matching.
+const clearFocus = (svg) => {
+  delete svg.dataset.focus; // querySelectorAll only walks descendants: root attr handled here
+  svg.querySelectorAll("[data-lit],[data-focus]").forEach((el) => {
+    el.removeAttribute("data-lit");
+    el.removeAttribute("data-focus");
+  });
+};
+const setFocus = (svg, card) => {
+  const path = card.dataset.path;
+  clearFocus(svg);
+  svg.dataset.focus = path;
+  card.setAttribute("data-focus", ""); // the accent outline rides this marker
+  const lit = new Set([path]);
+  for (const e of svg.querySelectorAll(".edge[data-from],.edge[data-to]"))
+    if (e.dataset.from === path || e.dataset.to === path) {
+      lit.add(e.dataset.from);
+      lit.add(e.dataset.to);
+      e.setAttribute("data-lit", "");
+    }
+  for (const c of svg.querySelectorAll(".card[data-path]"))
+    if (lit.has(c.dataset.path)) c.setAttribute("data-lit", "");
+};
+const bindFocus = (svg) => {
+  let down = null;
+  // d3 pan starts on pointerdown and the browser still fires click on the
+  // common ancestor after a drag — the movement threshold is what separates
+  // pan from click (wheel/dblclick zoom dispatch no click at all)
+  svg.addEventListener("pointerdown", (e) => (down = [e.clientX, e.clientY]));
+  svg.addEventListener("click", (e) => {
+    // synthetic clicks (probe) carry no pointerdown: down == null is a click;
+    // down is consumed on EVERY click — a stale drag distance must never
+    // poison the following legitimate click
+    const dragged = down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4;
+    down = null;
+    if (dragged) return;
+    const card = e.target.closest("g.card");
+    if (!card) return clearFocus(svg); // background click
+    if (e.metaKey || e.ctrlKey || e.shiftKey) return; // new-tab click stays native
+    e.preventDefault(); // card click = focus, not navigation
+    if (svg.dataset.focus === card.dataset.path) clearFocus(svg);
+    else setFocus(svg, card);
+  });
+};
+
 // (re)bindable so the fragment swap can re-attach zoom to the fresh svg
 const bindZoom = () => {
   const svg = document.querySelector("svg[data-zoom]");
@@ -29,8 +80,16 @@ const bindZoom = () => {
       }),
     );
   }
+  if (svg) bindFocus(svg);
 };
 bindZoom();
+
+// Esc unfocus: resolved per event — the filter swap replaces the svg element
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const svg = document.querySelector("svg[data-zoom]");
+  if (svg?.dataset.focus) clearFocus(svg);
+});
 
 // filter fragment swap (htmx-style, hand-rolled — no htmx dep, no new deps).
 // Trust boundary: the fetch is a same-origin relative URL taken from the
