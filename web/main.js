@@ -10,13 +10,25 @@ document.getElementById("theme")?.addEventListener("click", () => {
 // (re)bindable so the fragment swap can re-attach zoom to the fresh svg
 const bindZoom = () => {
   const svg = document.querySelector("svg[data-zoom]");
-  if (svg && globalThis.d3)
+  if (svg && globalThis.d3) {
+    // LOD labels (tasks/lod-labels.md): transform.k is in viewBox units — scale
+    // by the viewBox→viewport meet ratio so the band reads in on-screen scale.
+    // One --lod write on the svg root per zoom event; css does the per-text
+    // work. Band 0.45..0.65 tuned on the homelab fit view (~70-card corpus).
+    const vb = svg.viewBox.baseVal;
+    const meet = Math.min(svg.clientWidth / vb.width, svg.clientHeight / vb.height);
+    const lod = (k) => Math.min(Math.max((k * meet - 0.45) / 0.2, 0), 1);
+    svg.style.setProperty("--lod", lod(1)); // fit view: faded before any zoom
     // progressive enhancement: the graph is fully readable with JS off
     d3.select(svg).call(
       // wheel/pinch/dblclick zoom + drag pan; d3 stores the live transform on
       // the element itself (svg.__zoom) where the probe reads it
-      d3.zoom().on("zoom", (e) => svg.querySelector("g")?.setAttribute("transform", e.transform)),
+      d3.zoom().on("zoom", (e) => {
+        svg.querySelector("g")?.setAttribute("transform", e.transform);
+        svg.style.setProperty("--lod", lod(e.transform.k));
+      }),
     );
+  }
 };
 bindZoom();
 

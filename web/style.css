@@ -261,6 +261,14 @@ tbody a:hover {
 .tsk-graph .card.st-none .bar {
   fill: var(--gray-6);
 }
+/* LOD labels: bindZoom writes --lod (0..1, from the on-screen zoom scale) on
+   the svg root; text fades below the readability band. Default 1 keeps the
+   graph fully readable with JS off (progressive enhancement). Legend and
+   marginnote are html outside this selector — unaffected. */
+.tsk-graph svg text {
+  opacity: var(--lod, 1);
+  transition: opacity 0.2s var(--ease-2);
+}
 .tsk-graph .card text {
   fill: var(--text-1);
   font:
