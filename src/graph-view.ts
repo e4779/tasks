@@ -9,6 +9,7 @@ import { packComponents } from "./components.ts";
 import { addHops, bundleEdges } from "./edge-bundler.ts";
 import { mergeEdges } from "./edges.ts";
 import { buildElkGraph, edgeId, mapLayout, polyToD } from "./elk-adapter.ts";
+import { reduceEdges } from "./graph.ts";
 import { breakCycles } from "./graph-cycles.ts";
 import { esc } from "./render.ts";
 import type { Snapshot, SnapshotNode } from "./serve.ts";
@@ -42,15 +43,20 @@ export const renderGraph = async (
   nodes: readonly SnapshotNode[],
   edges: Snapshot["edges"],
   docHref: (abs: string) => string,
+  reduction = true,
 ): Promise<string> => {
   if (nodes.length === 0) return `<div class="tsk-graph tsk-empty">no matching tasks</div>`;
   const nodeObjs = nodes.map((n) => ({ ...n, id: n.path }));
   const byPath = new Map(nodeObjs.map((n) => [n.path, n]));
   const kept = edges.filter((e) => byPath.has(e.from) && byPath.has(e.to));
+  // tred render-prep (tasks/transitive-reduction.md): edges a longer path
+  // already implies leave the picture; the snapshot keeps every edge, so /doc,
+  // /list and /next stay untouched
+  const shown = reduction ? reduceEdges(kept) : kept;
   // render-prep only (AC7): merge parallels/mutual pairs — the snapshot keeps
   // every edge, the canvas draws one line per relation; no 2-cycles reach elk,
   // so breakCycles only ever handles 3+ cycles (broken style)
-  const merged = mergeEdges(kept);
+  const merged = mergeEdges(shown);
   const { broken } = breakCycles(nodes, merged);
   const brokenIds = new Set(broken.map(edgeId));
   const sizes = new Map(nodeObjs.map((n) => [n.id, cardSize(n.title, serverCtx)]));
