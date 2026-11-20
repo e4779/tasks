@@ -14,7 +14,7 @@ const X_GAP = 60;
 const Y_GAP = 64;
 
 /** union-find over merged edges → node id → component root index */
-const componentsOf = (ids: readonly string[], edges: readonly ElkEdgeRef[]): number[] => {
+export const componentsOf = (ids: readonly string[], edges: readonly ElkEdgeRef[]): number[] => {
   const par = ids.map((_, i) => i);
   const find = (x: number): number => {
     let i = x;

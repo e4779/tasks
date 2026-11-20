@@ -11,7 +11,8 @@
 // the span stay raw (genuinely distant routes).
 
 import type { Pt } from "./cards.ts";
-import { type ElkEdgeRef, edgeId, HOP_R, type Hop } from "./elk-adapter.ts";
+import { componentsOf } from "./components.ts";
+import { type ElkEdgeRef, type ElkNodeRef, edgeId, HOP_R, type Hop } from "./elk-adapter.ts";
 
 export type Rect = Readonly<{ x: number; y: number; w: number; h: number }>;
 export type BundleEdge = ElkEdgeRef;
@@ -234,6 +235,143 @@ export const addHops = (
       }),
     );
   return out;
+};
+
+/**
+ * Through-card ordering (tasks/through-cards-layer-ends.md): cards whose edges
+ * reach past the sibling fans sort to the ENDS of their layer so their
+ * verticals drop outside the bus spans. Two selectors over the pass-1 layout:
+ *   span  — doctrine letter: an edge spanning ≥2 bands marks both endpoints
+ *   cross — painted truth: an edge vertical crossing a foreign trunk marks its
+ *           non-member endpoint (the member side is pinned: moving it would
+ *           stretch its own bus)
+ * End side = where the far endpoint sits (x barycenter vs band mid); multiple
+ * through-cards on one side order among themselves by that barycenter. Stable
+ * for every other node. Re-run layout with the model-order option after this —
+ * elk cannot see the buses and would undo the ends placement.
+ */
+export const throughToEnds = (
+  nodes: readonly ElkNodeRef[],
+  edges: readonly ElkEdgeRef[],
+  rects: ReadonlyMap<string, Rect>,
+  trunks: readonly Trunk[],
+  pieces: ReadonlyMap<string, readonly Pt[][]>,
+): { nodes: ElkNodeRef[]; through: boolean } => {
+  const centreOf = (id: string): number => {
+    const r = rects.get(id);
+    return r ? r.x + r.w / 2 : Number.NaN;
+  };
+  // per-component band index (raw elk y clusters; tol 2 — elk aligns bands exactly)
+  const ids = nodes.map((n) => n.id);
+  const comp = componentsOf(ids, edges);
+  const bandLists = new Map<number, { y: number; members: string[] }[]>();
+  ids.forEach((id, i) => {
+    const r = rects.get(id);
+    if (!r) return;
+    const root = comp[i] ?? i;
+    const list = bandLists.get(root) ?? [];
+    const b = list.find((B) => Math.abs(B.y - r.y) <= 2);
+    if (b) b.members.push(id);
+    else list.push({ y: r.y, members: [id] });
+    bandLists.set(root, list);
+  });
+  const bandOf = new Map<string, { idx: number; root: number }>();
+  for (const [root, list] of bandLists) {
+    list.sort((a, b) => a.y - b.y);
+    for (const [idx, b] of list.entries())
+      for (const id of b.members) bandOf.set(id, { idx, root });
+  }
+  const through = new Set<string>();
+  const far = new Map<string, number[]>(); // through card → far endpoint centre x
+  const pushFar = (id: string, x: number) => {
+    if (Number.isNaN(x)) return;
+    far.set(id, [...(far.get(id) ?? []), x]);
+  };
+  // span selector: ≥2-band edges mark both endpoints
+  const meta = new Map(edges.map((e) => [edgeId(e), e]));
+  for (const e of edges) {
+    const bf = bandOf.get(e.from);
+    const bt = bandOf.get(e.to);
+    if (!bf || !bt || e.from === e.to || bf.root !== bt.root) continue;
+    if (Math.abs(bf.idx - bt.idx) < 2) continue;
+    through.add(e.from);
+    through.add(e.to);
+    pushFar(e.from, centreOf(e.to));
+    pushFar(e.to, centreOf(e.from));
+  }
+  // cross selector: piece vertical strictly inside a foreign trunk; a card with
+  // any endpoint ON a trunk is a bus member and stays pinned
+  const member = new Set<string>();
+  const onTrunk = (x: number, y: number): boolean =>
+    trunks.some((t) => Math.abs(y - t.y) < 0.5 && x >= t.x0 - 0.5 && x <= t.x1 + 0.5);
+  for (const [id, polys] of pieces) {
+    const e = meta.get(id);
+    if (!e) continue;
+    for (const poly of polys) {
+      for (const p of [poly[0], poly.at(-1)])
+        if (p && onTrunk(p.x, p.y)) {
+          member.add(e.from);
+          member.add(e.to);
+        }
+      for (let i = 1; i < poly.length; i++) {
+        const a = poly[i - 1];
+        const b = poly[i];
+        if (!a || !b || Math.abs(a.x - b.x) >= EPS) continue;
+        const lo = Math.min(a.y, b.y);
+        const hi = Math.max(a.y, b.y);
+        for (const t of trunks) {
+          if (t.y - lo <= EPS || hi - t.y <= EPS) continue; // not interior
+          if (a.x - t.x0 <= EPS || t.x1 - a.x <= EPS) continue; // trunk endpoint
+          for (const [me, other] of [
+            [e.from, e.to],
+            [e.to, e.from],
+          ] as const)
+            if (!member.has(me)) {
+              through.add(me);
+              pushFar(me, centreOf(other));
+            }
+        }
+      }
+    }
+  }
+  for (const m of member) through.delete(m);
+  if (through.size === 0) return { nodes: [...nodes], through: false };
+  // per band: through-cards to the ends by far-barycenter side, rest stable
+  const farMean = (id: string): number => {
+    const xs = far.get(id) ?? [];
+    return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : Number.NaN;
+  };
+  type Group = { ids: string[]; seq: string[] };
+  const groups: Group[] = [];
+  for (const [, list] of bandLists) {
+    for (const b of list) {
+      if (!b.members.some((id) => through.has(id))) continue;
+      const mid = b.members.reduce((s, id) => s + centreOf(id), 0) / b.members.length;
+      const left: string[] = [];
+      const right: string[] = [];
+      for (const id of b.members) if (through.has(id)) (farMean(id) <= mid ? left : right).push(id);
+      const cmp = (a: string, c: string): number => farMean(a) - farMean(c);
+      left.sort(cmp);
+      right.sort((a, c) => cmp(c, a)); // right end: largest barycenter outermost
+      groups.push({
+        ids: b.members,
+        seq: [...left, ...b.members.filter((id) => !through.has(id)), ...right],
+      });
+    }
+  }
+  // splice groups back: group drifts to its mean original index, members keep
+  // the new within-band sequence (only band-relative order reaches elk)
+  const idxOf = new Map(ids.map((id, i) => [id, i]));
+  const key = new Map<string, number>();
+  for (const g of groups) {
+    const mean = g.ids.reduce((s, id) => s + (idxOf.get(id) ?? 0), 0) / g.ids.length;
+    for (const [rank, id] of g.seq.entries()) key.set(id, mean + rank * 1e-3);
+  }
+  const ordered = nodes
+    .map((n, i) => [n, key.get(n.id) ?? i] as const)
+    .sort((a, b) => a[1] - b[1])
+    .map(([n]) => n);
+  return { nodes: ordered, through: true };
 };
 
 export const bundleEdges = (

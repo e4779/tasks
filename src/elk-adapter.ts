@@ -27,44 +27,52 @@ export const edgeId = (e: ElkEdgeRef): string => `${e.from}\t${e.to}\t${e.kind}`
 /**
  * @param aspect container w/h — layered stretches towards it, so the
  *   viewBox meet-fit covers both axes of whatever viewport is watching
+ * @param respectModelOrder freeze the fed children order within each layer
+ *   during crossing minimization (tasks/through-cards-layer-ends.md). Vendored
+ *   elkjs 0.12.1 ships the legacy boolean (hard constraint); the 0.9-era
+ *   considerModelOrder.strategy only knows NONE|NODES_AND_EDGES — a soft
+ *   preference that lets the minimizer undo the ends placement.
  */
 export const buildElkGraph = (
   nodes: readonly ElkNodeRef[],
   sizes: ReadonlyMap<string, Size>,
   edges: readonly ElkEdgeRef[],
   aspect: number,
+  respectModelOrder = false,
 ) => ({
   id: "root",
   // zero edges → rectPacking: layered stacks the whole corpus into one rank
   // (an overlap wall); rectPacking packs the rects in 2D and routes nothing —
   // there is nothing to route. Any edge at all → layered (it already stacks
   // disconnected components side by side).
-  layoutOptions:
-    edges.length === 0
-      ? {
-          "elk.algorithm": "org.eclipse.elk.rectpacking",
-          // rectPacking's first-fit rows overshoot the asked aspect (order- and
-          // width-distribution-dependent, observed ×1.2–×1.7), so ask for a
-          // narrower target and let the overshoot land inside the ac2 window
-          // shortcut: /1.5 calibrated on the 80-card corpus at aspects 1.3–2.87;
-          // recalibrate (or find the exact packing-strategy option) if a corpus misses ac2
-          "elk.aspectRatio": String(aspect / 1.5),
-        }
-      : {
-          // elkjs 0.12.1 layered IGNORES elk.aspectRatio once the graph has
-          // several components (homelab: 44 components → world aspect 7.19 at any
-          // ask) — components.ts repacks elk's own component boxes post-layout
-          "elk.algorithm": "layered",
-          "elk.edgeRouting": "ORTHOGONAL", // right angles, ≤2 bends per edge
-          // layout space vs data space: data edges run dependent(from) → blocker(to);
-          // UP points layered edges upward, so the blocker (target) renders upstream
-          // — above the dependent — without touching data direction or polylines
-          "elk.direction": "UP",
-          "elk.aspectRatio": String(aspect),
-          "elk.spacing.nodeNode": "230", // wide: merged single-line graph is narrow — ac2 needs ≥0.5 cover at wide-short viewports
-          "elk.layered.spacing.nodeNodeBetweenLayers": "200",
-          // nodeSize.constraints deliberately NOT set: width/height hold as given
-        },
+  layoutOptions: (edges.length === 0
+    ? {
+        "elk.algorithm": "org.eclipse.elk.rectpacking",
+        // rectPacking's first-fit rows overshoot the asked aspect (order- and
+        // width-distribution-dependent, observed ×1.2–×1.7), so ask for a
+        // narrower target and let the overshoot land inside the ac2 window
+        // shortcut: /1.5 calibrated on the 80-card corpus at aspects 1.3–2.87;
+        // recalibrate (or find the exact packing-strategy option) if a corpus misses ac2
+        "elk.aspectRatio": String(aspect / 1.5),
+      }
+    : {
+        // elkjs 0.12.1 layered IGNORES elk.aspectRatio once the graph has
+        // several components (homelab: 44 components → world aspect 7.19 at any
+        // ask) — components.ts repacks elk's own component boxes post-layout
+        "elk.algorithm": "layered",
+        "elk.edgeRouting": "ORTHOGONAL", // right angles, ≤2 bends per edge
+        // layout space vs data space: data edges run dependent(from) → blocker(to);
+        // UP points layered edges upward, so the blocker (target) renders upstream
+        // — above the dependent — without touching data direction or polylines
+        "elk.direction": "UP",
+        "elk.aspectRatio": String(aspect),
+        "elk.spacing.nodeNode": "230", // wide: merged single-line graph is narrow — ac2 needs ≥0.5 cover at wide-short viewports
+        "elk.layered.spacing.nodeNodeBetweenLayers": "200",
+        ...(respectModelOrder
+          ? { "elk.layered.crossingMinimization.forceNodeModelOrder": "true" }
+          : {}),
+        // nodeSize.constraints deliberately NOT set: width/height hold as given
+      }) as Record<string, string>,
   children: nodes.map((n) => {
     const s = sizes.get(n.id) ?? { w: 40, h: 26 }; // min-card fallback keeps ELK off NaN
     return { id: n.id, width: s.w, height: s.h };

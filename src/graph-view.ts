@@ -6,7 +6,7 @@
 import ELK from "elkjs";
 import { cardSize, serverCtx } from "./cards.ts";
 import { packComponents } from "./components.ts";
-import { addHops, bundleEdges } from "./edge-bundler.ts";
+import { addHops, bundleEdges, throughToEnds } from "./edge-bundler.ts";
 import { mergeEdges } from "./edges.ts";
 import { buildElkGraph, edgeId, mapLayout, polyToD } from "./elk-adapter.ts";
 import { breakCycles } from "./graph-cycles.ts";
@@ -55,10 +55,17 @@ export const renderGraph = async (
   const brokenIds = new Set(broken.map(edgeId));
   const sizes = new Map(nodeObjs.map((n) => [n.id, cardSize(n.title, serverCtx)]));
   elk ??= new ELK();
-  const result = await elk.layout(buildElkGraph(nodeObjs, sizes, merged, GRAPH_ASPECT));
-  // elk ignores the aspect once the corpus has several components — repack its
-  // own component boxes against GRAPH_ASPECT (rigid translation, routing intact)
-  const laid = mapLayout(result);
+  // pass 1: layout as before — its painted geometry tells which cards' verticals
+  // fall inside foreign bus spans (elk cannot see the buses)
+  const pass1 = mapLayout(await elk.layout(buildElkGraph(nodeObjs, sizes, merged, GRAPH_ASPECT)));
+  const routed1 = bundleEdges(pass1.polylines, merged, pass1.rects);
+  // through-cards (skip-span edges, live trunk crossings) sort to layer ends —
+  // pass 2 re-lays out with the model order frozen; without through-cards pass 1
+  // IS the layout (bus-free corpora stay byte-identical)
+  const order = throughToEnds(nodeObjs, merged, pass1.rects, routed1.trunks, routed1.pieces);
+  const laid = order.through
+    ? mapLayout(await elk.layout(buildElkGraph(order.nodes, sizes, merged, GRAPH_ASPECT, true)))
+    : pass1;
   const { rects, polylines } = packComponents(laid.rects, laid.polylines, merged, GRAPH_ASPECT);
   // edge buses: parallel horizontal runs merge into kind-homogeneous shared
   // trunks BEFORE painting (groups of 1 are identity — bus-free corpora paint
