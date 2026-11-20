@@ -3,8 +3,9 @@
 // track, the bundler collapses the ribbon afterwards. Pure geometry on
 // mapLayout polylines: no elk re-run, no DOM. Runs group PER KIND (hard with
 // hard, soft with soft, cycle with cycle) so trunks stay kind-homogeneous, and
-// card-attached stubs snap to the card's centre line so a shared source or
-// target paints ONE drop/rise instead of elk's per-edge fan.
+// card-attached stubs snap to the card's centre line — the first member
+// keeps it, colliding stubs step +8px rightward (H2) — instead of elk's
+// per-edge fan.
 
 import type { Pt } from "./cards.ts";
 import { type ElkEdgeRef, edgeId, HOP_R, type Hop } from "./elk-adapter.ts";
@@ -142,9 +143,9 @@ type Rewrite = {
 /**
  * split a polyline around its bundled runs: each run collapses to two vertical
  * stubs touching the trunk — the member never paints a horizontal. A stub at
- * the card-attached end is snapped to the card centre line (sx/tx) and spans
- * from the card border (sy/ey), so shared sources/targets overlap into ONE
- * drop/rise line.
+ * the card-attached end is snapped to the card centre line (sx/tx;
+ * H2 spreads colliding members +8px) and spans
+ * from the card border (sy/ey).
  */
 const rewrite = (poly: readonly Pt[], runs: readonly Rewrite[]): Pt[][] => {
   const byStart = new Map(runs.map((r) => [r.i, r]));
@@ -301,6 +302,90 @@ const separateAttachXs = (
 };
 
 /**
+ * H2 (tasks/attach-x-spreading.md) — no two edges may attach to the same card
+ * at the same x on the same border side. Colliding snapped stubs spread at
+ * snap-assignment time: the first keeps the card centre, each next steps
+ * +8px rightward, clamped inside the card span, wrapping left when the right
+ * side is exhausted (same policy as the D1 mover's offsets). The ledger is
+ * SEEDED with raw attach x's first — unbundled edges (pure-vertical fan
+ * teeth, lone runs) keep elk's own x, so snapped slots must step around
+ * them. Keyed by GEOMETRIC side (top/bottom): a snapS and a snapT can land
+ * on one border — the S/T split alone would not see them collide. Runs
+ * AFTER trunk membership (unpainted stubs keep elk's own attach and take no
+ * slot) and BEFORE D1, whose mover checks every new x against all other
+ * ends of the card — so a spread never gets re-collided.
+ */
+const SPREAD_STEP = 8;
+
+const spreadSnapXs = (
+  polys: ReadonlyMap<string, Mpt[]>,
+  runs: readonly RunX[],
+  trunkOf: ReadonlyMap<number, unknown>,
+  meta: ReadonlyMap<string, BundleEdge>,
+  rects: ReadonlyMap<string, Rect>,
+): void => {
+  const used = new Map<string, number[]>(); // cardId + side → taken attach x's
+  const sideOf = (card: Rect, y: number): string =>
+    Math.abs(y - card.y) < 0.5 ? "top" : Math.abs(y - (card.y + card.h)) < 0.5 ? "bottom" : "";
+  // one snapped stub per edge end: snapS ⇒ first run, snapT ⇒ last run
+  const snapped: Record<"S" | "T", Set<string>> = { S: new Set(), T: new Set() };
+  for (const [idx, r] of runs.entries()) {
+    if (!trunkOf.has(idx)) continue;
+    if (r.snapS) snapped.S.add(r.id);
+    if (r.snapT) snapped.T.add(r.id);
+  }
+  // seed: raw painted attaches (edge ends without a snapped stub) are fixed —
+  // register them so snapped slots never land on a fan tooth
+  for (const [id, poly] of polys) {
+    const e = meta.get(id);
+    if (!e || e.from === e.to || poly.length < 2) continue;
+    const p0 = poly[0];
+    const pn = poly.at(-1);
+    for (const [at, pt, cardId] of [
+      ["S", p0, e.from],
+      ["T", pn, e.to],
+    ] as const) {
+      if (snapped[at].has(id) || !pt) continue;
+      const card = rects.get(cardId);
+      if (!card) continue;
+      const side = sideOf(card, pt.y);
+      if (!side) continue;
+      const key = `${cardId}\u0000${side}`;
+      const taken = used.get(key) ?? [];
+      if (taken.some((v) => Math.abs(v - pt.x) < 0.5)) continue;
+      used.set(key, [...taken, pt.x]);
+    }
+  }
+  for (const [idx, r] of runs.entries()) {
+    if (!trunkOf.has(idx)) continue;
+    const e = meta.get(r.id);
+    if (!e) continue;
+    const take = (cardId: string, at: "S" | "T"): void => {
+      const card = rects.get(cardId);
+      if (!card) return;
+      const side = sideOf(card, at === "S" ? r.sy : r.ey);
+      if (!side) return; // off-border attach: outside D1/H2 scope, keep the centre
+      const key = `${cardId}\u0000${side}`;
+      const taken = used.get(key) ?? [];
+      const x0 = at === "S" ? r.sx : r.tx;
+      const free = (x: number): boolean => taken.every((v) => Math.abs(v - x) >= 0.5);
+      let x = Number.NaN;
+      if (free(x0)) x = x0;
+      for (let c = x0 + SPREAD_STEP; Number.isNaN(x) && c <= card.x + card.w - 1; c += SPREAD_STEP)
+        if (free(c)) x = c;
+      for (let c = x0 - SPREAD_STEP; Number.isNaN(x) && c >= card.x + 1; c -= SPREAD_STEP)
+        if (free(c)) x = c;
+      if (Number.isNaN(x)) x = x0; // shortcut: span exhausted both ways; probe flags — widen span policy if a corpus ever paints one
+      if (at === "S") r.sx = x;
+      else r.tx = x;
+      used.set(key, [...taken, x]);
+    };
+    if (r.snapS) take(e.from, "S");
+    if (r.snapT) take(e.to, "T");
+  }
+};
+
+/**
  * @param polylines mapLayout output (edgeId → points)
  * @param edges kind + endpoints per edgeId
  * @param rects card rects (node path → rect)
@@ -431,6 +516,7 @@ export const bundleEdges = (
         drafts.push(t);
         for (const r of g) trunkOf.set(runs.indexOf(r), t);
       }
+  spreadSnapXs(polys, runs, trunkOf, meta, rects); // H2 spread first — D1 sees and avoids the taken x's
   separateAttachXs(polys, runs, trunkOf, meta, rects);
   for (const [idx, t] of trunkOf) {
     const r = runs[idx];

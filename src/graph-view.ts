@@ -87,9 +87,9 @@ export const renderGraph = async (
     // semantics (edgeless corpora legitimately paint nothing)
     `<div class="tsk-graph"><svg data-zoom data-edges="${edges.length}" viewBox="${viewBox}" role="img" aria-label="task graph"><g>`,
   ];
-  // D3b: shared segments draw ONCE — N members rising to the same card emit
-  // identical stub d strings; keep the first occurrence (its from/to survives
-  // as provenance for the shared line)
+  // D3b: shared segments draw ONCE — identical d strings (ties H2's spread
+  // cannot separate, e.g. zero-span cards) keep the first occurrence (its
+  // from/to survives as provenance for the shared line)
   const seenD = new Set<string>();
   const emit = (cls: string, attrs: string, d: string) => {
     if (seenD.has(d)) return;

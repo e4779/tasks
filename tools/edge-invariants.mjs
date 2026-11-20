@@ -7,6 +7,9 @@
 //   H1  every interior inter-edge crossing has exactly one hop arc
 //       (tasks/edge-crossing-hops.md — T-junctions stay plain, ≤2r clusters
 //       may leave later crossings plain, never overlapping arcs)
+//   H2  per card+side, attach x values pairwise distinct
+//       (tasks/attach-x-spreading.md — no collinear stub pair; reads the
+//       FINAL emitted SVG, post-D1 shifts included)
 // Curl-level: fetch the route, parse the served SVG, verdict, exit 1 on any
 // violation. Plain node, no deps.
 //
@@ -103,6 +106,7 @@ const report = {
   D3a: [],
   D3b: [],
   H1: [],
+  H2: [],
 };
 
 // --- D1: per-card bottom-attach x ∩ top-attach x = ∅ -------------------------
@@ -140,6 +144,17 @@ if (thm) {
     ? `FAIL — shared attach x: ${clash.join(", ")}`
     : `pass — incoming bottom [${rec.bottom.join(", ") || "none"}] vs outgoing top [${rec.top.join(", ") || "none"}]`;
 }
+
+// --- H2: per card+side, attach x values pairwise distinct --------------------
+// the SAME parsed attach ends D1 uses — but compared WITHIN one side. The D1
+// mover may itself shift an attach, so this reads final geometry only (the
+// emitted SVG), never pre-shift values.
+for (const [path, sides] of attach)
+  for (const [side, xs] of Object.entries(sides))
+    for (let i = 0; i < xs.length; i++)
+      for (let j = i + 1; j < xs.length; j++)
+        if (Math.abs(xs[i] - xs[j]) < COLLIDE)
+          report.H2.push(`${short(path)} ${side}: attach x=${xs[i]} == x=${xs[j]}`);
 
 // --- D2: no vertical backtrack within one edge path ---------------------------
 for (const p of pieces) {
@@ -256,8 +271,14 @@ line(
   `H1  interior crossings ↔ hop arcs (crossings=${crossings.size} arcs=${arcs.size} skipped=${h1Skipped})`,
   report.H1,
 );
+line("H2  per-card same-side attach x pairwise distinct", report.H2);
 console.log(`thm012: ${thmVerdict}`);
 const fail =
-  report.D1.length + report.D2.length + report.D3a.length + report.D3b.length + report.H1.length;
+  report.D1.length +
+  report.D2.length +
+  report.D3a.length +
+  report.D3b.length +
+  report.H1.length +
+  report.H2.length;
 console.log(`RESULT: ${fail === 0 ? "PASS" : `FAIL (${fail} violations)`}`);
 process.exit(fail === 0 ? 0 : 1);

@@ -118,13 +118,13 @@ test("(f) shared source + targets: stubs snap to card centres — one drop, N ri
   ]);
   const { trunks, pieces } = bundleEdges(polylines, [e1, e2], rects);
   expect(trunks).toEqual([{ kind: "hard", y: 692, x0: 140, x1: 700 }]); // trunk starts at the drop
-  // identical source stubs overlap into ONE drop line at the card centre
+  // first member keeps the card centre, the colliding next stub steps +8px (H2)
   expect(pieces.get(edgeId(e1))).toEqual([
     [p(140, 100), p(140, 692)],
     [p(500, 692), p(500, 900)],
   ]);
   expect(pieces.get(edgeId(e2))).toEqual([
-    [p(140, 100), p(140, 692)],
+    [p(148, 100), p(148, 692)],
     [p(700, 692), p(700, 900)],
   ]);
 });
@@ -168,16 +168,17 @@ test("(h) snapped target stub consumes the pure-vertical suffix — no border jo
     ["wide.md", { x: 500, y: 606, w: 400, h: 26 }], // centre x = 700, border y = 632
   ]);
   const { trunks, pieces } = bundleEdges(polylines, [e1, e2], rects);
-  expect(trunks).toEqual([{ kind: "hard", y: 702, x0: 100, x1: 700 }]);
-  // both members rise at the target centre — and NOTHING else: the replaced
-  // elk suffix (its old attach x) must not leak back as a border horizontal
+  expect(trunks).toEqual([{ kind: "hard", y: 702, x0: 100, x1: 708 }]);
+  // the first member rises at the target centre, the colliding second steps
+  // +8 (H2) — and NOTHING else: the replaced elk suffix (its old attach x)
+  // must not leak back as a border horizontal
   expect(pieces.get(edgeId(e1))).toEqual([
     [p(100, 742), p(100, 702)],
     [p(700, 702), p(700, 632)],
   ]);
   expect(pieces.get(edgeId(e2))).toEqual([
     [p(300, 742), p(300, 702)],
-    [p(700, 702), p(700, 632)],
+    [p(708, 702), p(708, 632)],
   ]);
   for (const [id, ps] of pieces)
     for (const poly of ps)
@@ -244,14 +245,15 @@ test("fp-noise elk coords still snap — no overshoot knee, no phantom collinear
     rects,
   );
   expect(trunks).toEqual([{ kind: "hard", y: 665, x0: 1490, x1: 2081.534 }]);
-  // both edges snap both ends: border→trunk stubs only, shared target stub
+  // both edges snap both ends: border→trunk stubs only; the shared target
+  // stub spreads — first keeps the centre, second steps +8 (H2)
   expect(pieces.get(edgeId(e1))).toEqual([
     [p(2081.534, 678), p(2081.534, 665)],
     [p(1490, 665), p(1490, 478)],
   ]);
   expect(pieces.get(edgeId(e2))).toEqual([
     [p(1940.544, 678), p(1940.544, 665)],
-    [p(1490, 665), p(1490, 478)],
+    [p(1498, 665), p(1498, 478)],
   ]);
 });
 
@@ -289,16 +291,17 @@ test("D1: bottom trunk x == top exit x on one card — fewer side (top) slides 1
   );
   // the outgoing side (1 attachment) yields to the incoming pair: exit slides to 1506
   expect(pieces.get(edgeId(e2))).toEqual([[p(1506, 452), p(1506, 252)]]);
-  // incoming trunk stubs stay at the centre — and the old 658 knee is gone
+  // incoming stubs spread pre-D1 (H2): first keeps the centre, second +8 —
+  // so the pierce is already gone before the mover rescans
   expect(pieces.get(edgeId(e1))).toEqual([
     [p(370.138, 678), p(370.138, 663)],
     [p(1490, 663), p(1490, 478)],
   ]);
   expect(pieces.get(edgeId(e3))).toEqual([
     [p(903.262, 678), p(903.262, 663)],
-    [p(1490, 663), p(1490, 478)],
+    [p(1498, 663), p(1498, 478)],
   ]);
-  expect(trunks).toEqual([{ kind: "hard", y: 663, x0: 370.138, x1: 1490 }]);
+  expect(trunks).toEqual([{ kind: "hard", y: 663, x0: 370.138, x1: 1498 }]);
 });
 
 test("D1: raw end with a bend slides only its vertical chain — the far attach keeps its x", () => {
@@ -324,6 +327,124 @@ test("D1: raw end with a bend slides only its vertical chain — the far attach 
   expect(pieces.get(edgeId(e2))).toEqual([
     [p(1506, 452), p(1506, 350), p(1440, 350), p(1440, 252)],
   ]);
+});
+
+// --- H2: colliding snapped stubs spread per (card, side) ---------------------
+
+test("H2: two edges from one source card → distinct snap x (≥8px), first keeps the centre", () => {
+  const rect = (x: number): Rect => ({ x, y: 900, w: 80, h: 26 });
+  const e1 = { from: "src.md", to: "t1.md", kind: "hard" };
+  const e2 = { from: "src.md", to: "t2.md", kind: "hard" };
+  const { pieces } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), vhv(100, 100, 500, 672, 900)],
+      [edgeId(e2), vhv(180, 180, 700, 712, 900)],
+    ]),
+    [e1, e2],
+    new Map<string, Rect>([
+      ["src.md", { x: 80, y: 74, w: 120, h: 26 }], // centre x = 140
+      ["t1.md", rect(460)],
+      ["t2.md", rect(660)],
+    ]),
+  );
+  const s1 = pieces.get(edgeId(e1))?.[0]?.[0];
+  const s2 = pieces.get(edgeId(e2))?.[0]?.[0];
+  expect(s1).toEqual(p(140, 100)); // first member keeps the card centre
+  expect(s2?.x).toBe(148); // colliding next stub steps +8px
+  expect(Math.abs((s2?.x ?? 0) - (s1?.x ?? 0))).toBeGreaterThanOrEqual(8);
+});
+
+test("H2: three colliding stubs → three distinct x (+8 steps)", () => {
+  const rect = (x: number): Rect => ({ x, y: 900, w: 80, h: 26 });
+  const e1 = { from: "src.md", to: "t1.md", kind: "hard" };
+  const e2 = { from: "src.md", to: "t2.md", kind: "hard" };
+  const e3 = { from: "src.md", to: "t3.md", kind: "hard" };
+  const { pieces } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), vhv(100, 100, 500, 672, 900)],
+      [edgeId(e2), vhv(180, 180, 700, 712, 900)],
+      [edgeId(e3), vhv(140, 140, 600, 692, 900)],
+    ]),
+    [e1, e2, e3],
+    new Map<string, Rect>([
+      ["src.md", { x: 80, y: 74, w: 120, h: 26 }],
+      ["t1.md", rect(460)],
+      ["t2.md", rect(660)],
+      ["t3.md", rect(560)],
+    ]),
+  );
+  const xs = [e1, e2, e3].map((e) => pieces.get(edgeId(e))?.[0]?.[0]?.x);
+  expect(xs).toEqual([140, 148, 156]);
+  expect(new Set(xs).size).toBe(3);
+});
+
+test("H2: +8 steps clamp inside the card span — third stub wraps left when exhausted", () => {
+  const rect = (x: number): Rect => ({ x, y: 900, w: 80, h: 26 });
+  const e1 = { from: "src.md", to: "t1.md", kind: "hard" };
+  const e2 = { from: "src.md", to: "t2.md", kind: "hard" };
+  const e3 = { from: "src.md", to: "t3.md", kind: "hard" };
+  const { pieces } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), vhv(100, 100, 500, 672, 900)],
+      [edgeId(e2), vhv(180, 180, 700, 712, 900)],
+      [edgeId(e3), vhv(140, 140, 600, 692, 900)],
+    ]),
+    [e1, e2, e3],
+    new Map<string, Rect>([
+      ["src.md", { x: 100, y: 74, w: 30, h: 26 }], // centre 115, span 101..129: +8 fits once
+      ["t1.md", rect(460)],
+      ["t2.md", rect(660)],
+      ["t3.md", rect(560)],
+    ]),
+  );
+  const xs = [e1, e2, e3].map((e) => pieces.get(edgeId(e))?.[0]?.[0]?.x);
+  expect(xs).toEqual([115, 123, 107]); // third wraps to the left free slot
+  expect(new Set(xs).size).toBe(3);
+});
+
+test("H2: fan legs with snapS=false keep their own x — raw ends take no ledger slot", () => {
+  const e1 = { from: "src.md", to: "t1.md", kind: "hard" };
+  const e2 = { from: "src.md", to: "t2.md", kind: "hard" };
+  // no rect for src.md → no snap: both trunk-member stubs keep their elk x 50
+  // even though they collide — raw ends are outside the ledger's scope
+  const { pieces, trunks } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), [p(50, 100), p(150, 100), p(150, 672), p(500, 672), p(500, 900)]],
+      [edgeId(e2), [p(50, 110), p(150, 110), p(150, 712), p(700, 712), p(700, 900)]],
+    ]),
+    [e1, e2],
+    new Map<string, Rect>([
+      ["t1.md", { x: 460, y: 900, w: 80, h: 26 }],
+      ["t2.md", { x: 660, y: 900, w: 80, h: 26 }],
+    ]),
+  );
+  expect(trunks.length).toBe(2); // both runs bundled — the stubs ARE members
+  expect(pieces.get(edgeId(e1))?.[0]).toEqual([p(50, 100), p(50, 105)]);
+  expect(pieces.get(edgeId(e2))?.[0]).toEqual([p(50, 110), p(50, 105)]);
+});
+
+test("H2: snapped slots seed around RAW fan teeth — centre-x vertical keeps its x, stubs step off", () => {
+  const e1 = { from: "a.md", to: "tgt.md", kind: "hard" };
+  const e2 = { from: "b.md", to: "tgt.md", kind: "hard" };
+  const raw = { from: "r.md", to: "tgt.md", kind: "hard" }; // pure vertical: no run → never bundled
+  const { pieces } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), [p(100, 678), p(100, 663), p(500, 663), p(500, 478)]],
+      [edgeId(e2), [p(300, 678), p(300, 673), p(700, 673), p(700, 478)]],
+      [edgeId(raw), [p(140, 678), p(140, 478)]], // elk fan tooth ON the centre line
+    ]),
+    [e1, e2, raw],
+    new Map<string, Rect>([
+      ["a.md", { x: 20, y: 678, w: 160, h: 26 }], // centre 100
+      ["b.md", { x: 220, y: 678, w: 160, h: 26 }], // centre 300
+      ["r.md", { x: 60, y: 678, w: 160, h: 26 }], // centre 140 = tgt centre
+      ["tgt.md", { x: 40, y: 452, w: 200, h: 26 }], // centre 140, bottom border 478
+    ]),
+  );
+  // the raw tooth paints untouched at 140; snapped slots seed around it
+  expect(pieces.get(edgeId(raw))).toEqual([[p(140, 678), p(140, 478)]]);
+  expect(pieces.get(edgeId(e1))?.[1]?.[0]?.x).toBe(148);
+  expect(pieces.get(edgeId(e2))?.[1]?.[0]?.x).toBe(156);
 });
 
 test("empty and degenerate polylines survive (unrouted/self-loop edges)", () => {
