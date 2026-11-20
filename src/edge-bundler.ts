@@ -2,10 +2,13 @@
 // trunk (wiring-harness style) — elk layered staggers every edge onto its own
 // track, the bundler collapses the ribbon afterwards. Pure geometry on
 // mapLayout polylines: no elk re-run, no DOM. Runs group PER KIND (hard with
-// hard, soft with soft, cycle with cycle) so trunks stay kind-homogeneous, and
-// card-attached stubs snap to the card's centre line — the first member
-// keeps it, colliding stubs step +8px rightward (H2) — instead of elk's
-// per-edge fan.
+// hard, soft with soft, cycle with cycle) so trunks stay kind-homogeneous.
+// Single-stem attach (tasks/single-stem-attach.md, supersedes H2 spreading):
+// every edge end whose attach x sits inside the owner card's span attaches at
+// the card's side stem — inbound at centre − 8, outbound at centre + 8 — so a
+// fan paints ONE line per side instead of elk's per-edge comb. Raw
+// pure-vertical teeth inside the span bundle into the stem too; teeth outside
+// the span stay raw (genuinely distant routes).
 
 import type { Pt } from "./cards.ts";
 import { type ElkEdgeRef, edgeId, HOP_R, type Hop } from "./elk-adapter.ts";
@@ -13,17 +16,6 @@ import { type ElkEdgeRef, edgeId, HOP_R, type Hop } from "./elk-adapter.ts";
 export type Rect = Readonly<{ x: number; y: number; w: number; h: number }>;
 export type BundleEdge = ElkEdgeRef;
 export type Trunk = Readonly<{ y: number; x0: number; x1: number; kind: string }>;
-type Mpt = { x: number; y: number };
-type RunX = Run & {
-  id: string;
-  kind: string;
-  snapS: boolean;
-  snapT: boolean;
-  sx: number;
-  sy: number;
-  tx: number;
-  ey: number;
-};
 
 const EPS = 1e-9;
 // two runs share a corridor when their tracks sit within BAND in y AND their
@@ -143,9 +135,9 @@ type Rewrite = {
 /**
  * split a polyline around its bundled runs: each run collapses to two vertical
  * stubs touching the trunk — the member never paints a horizontal. A stub at
- * the card-attached end is snapped to the card centre line (sx/tx;
- * H2 spreads colliding members +8px) and spans
- * from the card border (sy/ey).
+ * the card-attached end is snapped to the card's side stem (sx/tx; single-stem
+ * doctrine: outbound centre+8, inbound centre−8) and spans from the card
+ * border (sy/ey).
  */
 const rewrite = (poly: readonly Pt[], runs: readonly Rewrite[]): Pt[][] => {
   const byStart = new Map(runs.map((r) => [r.i, r]));
@@ -171,218 +163,6 @@ const rewrite = (poly: readonly Pt[], runs: readonly Rewrite[]): Pt[][] => {
   }
   out.push(cur);
   return out.map(clean).filter((p) => p.length >= 2);
-};
-
-/**
- * D1 — «линия не должна проходить через блок»: a card whose bottom-attach x
- * equals its top-attach x is pierced by ONE continuous line (incoming trunk
- * stub rises to the bottom border while the outgoing edge leaves the top at
- * the same x — the thm012 ruling). Move the side with FEWER attachments by GAP
- * inside the card span: snapped stubs move with their run (trunk spans are
- * computed after this), raw ends slide their vertical chain so the polyline
- * stays orthogonal.
- */
-const ATTACH_GAP = 16;
-
-const separateAttachXs = (
-  polys: ReadonlyMap<string, Mpt[]>,
-  runs: readonly RunX[],
-  trunkOf: ReadonlyMap<number, unknown>,
-  meta: ReadonlyMap<string, BundleEdge>,
-  rects: ReadonlyMap<string, Rect>,
-): void => {
-  // one snapped stub per edge end: snapS ⇒ first run, snapT ⇒ last run
-  const snapped: Record<"S" | "T", Map<string, RunX>> = { S: new Map(), T: new Map() };
-  for (const [idx, r] of runs.entries()) {
-    if (!trunkOf.has(idx)) continue;
-    if (r.snapS) snapped.S.set(r.id, r);
-    if (r.snapT) snapped.T.set(r.id, r);
-  }
-  type End = { id: string; at: "S" | "T"; x: number; y: number; side: string };
-  const endsOf = new Map<string, Record<"S" | "T", End>>();
-  const byCard = new Map<string, End[]>();
-  for (const [id, poly] of polys) {
-    const e = meta.get(id);
-    if (!e || e.from === e.to || poly.length < 2) continue;
-    const mk = (at: "S" | "T"): End => {
-      const run = (at === "S" ? snapped.S : snapped.T).get(id);
-      const pt = at === "S" ? poly[0] : poly.at(-1);
-      return {
-        id,
-        at,
-        x: run ? (at === "S" ? run.sx : run.tx) : (pt?.x ?? 0),
-        y: run ? (at === "S" ? run.sy : run.ey) : (pt?.y ?? 0),
-        side: "",
-      };
-    };
-    const ends: Record<"S" | "T", End> = { S: mk("S"), T: mk("T") };
-    endsOf.set(id, ends);
-    for (const end of [ends.S, ends.T]) {
-      const cardId = end.at === "S" ? e.from : e.to;
-      const card = rects.get(cardId);
-      if (!card) continue;
-      end.side =
-        Math.abs(end.y - card.y) < 0.5
-          ? "top"
-          : Math.abs(end.y - (card.y + card.h)) < 0.5
-            ? "bottom"
-            : "";
-      if (end.side) byCard.set(cardId, [...(byCard.get(cardId) ?? []), end]);
-    }
-  }
-  const slideChain = (poly: Mpt[], fromStart: boolean, dx: number): void => {
-    const anchor = fromStart ? poly[0]?.x : poly.at(-1)?.x;
-    if (anchor === undefined) return;
-    if (fromStart)
-      for (const p of poly) {
-        if (p.x !== anchor) break;
-        p.x += dx;
-      }
-    else
-      for (let i = poly.length - 1; i >= 0; i--) {
-        const p = poly[i];
-        if (!p || p.x !== anchor) break;
-        p.x += dx;
-      }
-  };
-  const applyEnd = (end: End, dx: number): void => {
-    const run = snapped[end.at].get(end.id);
-    if (run) {
-      if (end.at === "S") run.sx += dx;
-      else run.tx += dx;
-      end.x += dx;
-      return;
-    }
-    const poly = polys.get(end.id);
-    if (!poly) return;
-    slideChain(poly, end.at === "S", dx);
-    // a raw slide moves the whole vertical — the edge's OTHER attach may have
-    // slid too (pure vertical), refresh both records
-    const ends = endsOf.get(end.id);
-    const p0 = poly[0];
-    const pn = poly.at(-1);
-    if (ends && p0 && pn) {
-      ends.S.x = p0.x;
-      ends.T.x = pn.x;
-    }
-  };
-  // passes: one moved end can expose a clash on its OTHER card (a raw vertical
-  // is two attach points) — rescan until no move fires
-  for (let pass = 0; pass < 8; pass++) {
-    let moved = false;
-    for (const [cardId, ends] of byCard) {
-      const card = rects.get(cardId);
-      if (!card) continue;
-      const tops = ends.filter((e) => e.side === "top");
-      const bots = ends.filter((e) => e.side === "bottom");
-      const xs = [...new Set([...tops, ...bots].map((e) => e.x))].sort((a, b) => a - b);
-      for (const x of xs) {
-        const gT = tops.filter((e) => Math.abs(e.x - x) < 0.5);
-        const gB = bots.filter((e) => Math.abs(e.x - x) < 0.5);
-        if (gT.length === 0 || gB.length === 0) continue;
-        // fewer-attached side yields; tie → the outgoing (top) side
-        const group = gT.length <= gB.length ? gT : gB;
-        const others = ends.filter((e) => Math.abs(e.x - x) >= 0.5).map((e) => e.x);
-        const free = (nx: number): boolean =>
-          nx > card.x + 1 &&
-          nx < card.x + card.w - 1 &&
-          others.every((v) => Math.abs(v - nx) >= 0.5);
-        const dx = [ATTACH_GAP, -ATTACH_GAP, 2 * ATTACH_GAP, -2 * ATTACH_GAP].find((d) =>
-          free(x + d),
-        );
-        if (dx === undefined) continue; // shortcut: card span exhausted; probe flags — widen offsets if a corpus ever hits it
-        for (const end of group) {
-          applyEnd(end, dx);
-          moved = true;
-        }
-      }
-    }
-    if (!moved) return;
-  }
-};
-
-/**
- * H2 (tasks/attach-x-spreading.md) — no two edges may attach to the same card
- * at the same x on the same border side. Colliding snapped stubs spread at
- * snap-assignment time: the first keeps the card centre, each next steps
- * +8px rightward, clamped inside the card span, wrapping left when the right
- * side is exhausted (same policy as the D1 mover's offsets). The ledger is
- * SEEDED with raw attach x's first — unbundled edges (pure-vertical fan
- * teeth, lone runs) keep elk's own x, so snapped slots must step around
- * them. Keyed by GEOMETRIC side (top/bottom): a snapS and a snapT can land
- * on one border — the S/T split alone would not see them collide. Runs
- * AFTER trunk membership (unpainted stubs keep elk's own attach and take no
- * slot) and BEFORE D1, whose mover checks every new x against all other
- * ends of the card — so a spread never gets re-collided.
- */
-const SPREAD_STEP = 8;
-
-const spreadSnapXs = (
-  polys: ReadonlyMap<string, Mpt[]>,
-  runs: readonly RunX[],
-  trunkOf: ReadonlyMap<number, unknown>,
-  meta: ReadonlyMap<string, BundleEdge>,
-  rects: ReadonlyMap<string, Rect>,
-): void => {
-  const used = new Map<string, number[]>(); // cardId + side → taken attach x's
-  const sideOf = (card: Rect, y: number): string =>
-    Math.abs(y - card.y) < 0.5 ? "top" : Math.abs(y - (card.y + card.h)) < 0.5 ? "bottom" : "";
-  // one snapped stub per edge end: snapS ⇒ first run, snapT ⇒ last run
-  const snapped: Record<"S" | "T", Set<string>> = { S: new Set(), T: new Set() };
-  for (const [idx, r] of runs.entries()) {
-    if (!trunkOf.has(idx)) continue;
-    if (r.snapS) snapped.S.add(r.id);
-    if (r.snapT) snapped.T.add(r.id);
-  }
-  // seed: raw painted attaches (edge ends without a snapped stub) are fixed —
-  // register them so snapped slots never land on a fan tooth
-  for (const [id, poly] of polys) {
-    const e = meta.get(id);
-    if (!e || e.from === e.to || poly.length < 2) continue;
-    const p0 = poly[0];
-    const pn = poly.at(-1);
-    for (const [at, pt, cardId] of [
-      ["S", p0, e.from],
-      ["T", pn, e.to],
-    ] as const) {
-      if (snapped[at].has(id) || !pt) continue;
-      const card = rects.get(cardId);
-      if (!card) continue;
-      const side = sideOf(card, pt.y);
-      if (!side) continue;
-      const key = `${cardId}\u0000${side}`;
-      const taken = used.get(key) ?? [];
-      if (taken.some((v) => Math.abs(v - pt.x) < 0.5)) continue;
-      used.set(key, [...taken, pt.x]);
-    }
-  }
-  for (const [idx, r] of runs.entries()) {
-    if (!trunkOf.has(idx)) continue;
-    const e = meta.get(r.id);
-    if (!e) continue;
-    const take = (cardId: string, at: "S" | "T"): void => {
-      const card = rects.get(cardId);
-      if (!card) return;
-      const side = sideOf(card, at === "S" ? r.sy : r.ey);
-      if (!side) return; // off-border attach: outside D1/H2 scope, keep the centre
-      const key = `${cardId}\u0000${side}`;
-      const taken = used.get(key) ?? [];
-      const x0 = at === "S" ? r.sx : r.tx;
-      const free = (x: number): boolean => taken.every((v) => Math.abs(v - x) >= 0.5);
-      let x = Number.NaN;
-      if (free(x0)) x = x0;
-      for (let c = x0 + SPREAD_STEP; Number.isNaN(x) && c <= card.x + card.w - 1; c += SPREAD_STEP)
-        if (free(c)) x = c;
-      for (let c = x0 - SPREAD_STEP; Number.isNaN(x) && c >= card.x + 1; c -= SPREAD_STEP)
-        if (free(c)) x = c;
-      if (Number.isNaN(x)) x = x0; // shortcut: span exhausted both ways; probe flags — widen span policy if a corpus ever paints one
-      if (at === "S") r.sx = x;
-      else r.tx = x;
-      used.set(key, [...taken, x]);
-    };
-    if (r.snapS) take(e.from, "S");
-    if (r.snapT) take(e.to, "T");
-  }
 };
 
 /**
@@ -475,6 +255,21 @@ export const bundleEdges = (
     const r = nodeId === undefined ? undefined : rects.get(nodeId);
     return r ? q(r.x + r.w / 2) : q(fallback);
   };
+  // single-stem doctrine (tasks/single-stem-attach.md): every end whose attach
+  // x sits inside the owner card's span attaches at the card's side stem —
+  // outbound centre+8, inbound centre−8 — deterministic, no ledger
+  const STEM = 8;
+  const inSpan = (x: number, r: Rect): boolean => x >= r.x - 0.5 && x <= r.x + r.w + 0.5;
+  const stemOf = (at: "S" | "T", cardId: string, attachX: number): number => {
+    const card = rects.get(cardId);
+    return card && inSpan(attachX, card)
+      ? centre(cardId, card.x) + (at === "S" ? STEM : -STEM)
+      : q(attachX); // out-of-span: genuinely distant route keeps elk's x
+  };
+  const onBorder = (cardId: string, y: number): boolean => {
+    const r = rects.get(cardId);
+    return !!r && (Math.abs(y - r.y) < 0.5 || Math.abs(y - (r.y + r.h)) < 0.5);
+  };
   const runs = [...polys].flatMap(([id, poly]) => {
     const e = meta.get(id);
     return runsOf(poly).map((r) => {
@@ -489,15 +284,15 @@ export const bundleEdges = (
         kind: e?.kind ?? "",
         snapS,
         snapT,
-        sx: snapS ? centre(e?.from, 0) : (poly[r.i]?.x ?? 0),
+        sx: snapS ? stemOf("S", e?.from ?? "", poly[0]?.x ?? 0) : (poly[r.i]?.x ?? 0),
         sy: snapS ? (poly[0]?.y ?? r.y) : r.y,
-        tx: snapT ? centre(e?.to, 0) : (poly[r.j]?.x ?? 0),
+        tx: snapT ? stemOf("T", e?.to ?? "", poly.at(-1)?.x ?? 0) : (poly[r.j]?.x ?? 0),
         ey: snapT ? (poly.at(-1)?.y ?? r.y) : r.y,
       };
     });
   });
-  // trunk MEMBERSHIP first (drafts without span — the span must be computed
-  // only AFTER D1 moves the stub x's it has to reach)
+  // trunk MEMBERSHIP first (drafts without span — the span is filled from
+  // member stub x's once snapping is final)
   type TrunkDraft = { y: number; x0: number; x1: number; kind: string };
   const trunkOf = new Map<number, TrunkDraft>(); // run record (by index into runs) → its trunk
   const drafts: TrunkDraft[] = [];
@@ -506,7 +301,7 @@ export const bundleEdges = (
   for (const [kind, rs] of [...byKind.entries()])
     for (const g of corridorGroups(rs))
       if (g.length >= 2) {
-        // trunk y = mean of member track y's; span filled post-D1
+        // trunk y = mean of member track y's
         const t: TrunkDraft = {
           kind,
           y: g.reduce((s, r) => s + r.y, 0) / g.length,
@@ -516,8 +311,41 @@ export const bundleEdges = (
         drafts.push(t);
         for (const r of g) trunkOf.set(runs.indexOf(r), t);
       }
-  spreadSnapXs(polys, runs, trunkOf, meta, rects); // H2 spread first — D1 sees and avoids the taken x's
-  separateAttachXs(polys, runs, trunkOf, meta, rects);
+  const runIdx = new Map<string, number[]>(); // edge id → indices into runs
+  runs.forEach((r, i) => {
+    runIdx.set(r.id, [...(runIdx.get(r.id) ?? []), i]);
+  });
+  // single-stem: UNBUNDLED edges snap their in-span border attaches to the
+  // side stems exactly like trunk members — raw pure-vertical teeth (no run)
+  // jog at the vertical midpoint, lone V-H-V routes jog at elk's own run
+  // level. Bundled and multi-run edges keep the trunk rewrite below.
+  for (const [id, poly] of polys) {
+    const e = meta.get(id);
+    if (!e || e.from === e.to || poly.length < 2) continue;
+    const idxs = runIdx.get(id) ?? [];
+    const idx0 = idxs[0];
+    if (idxs.length > 1 || (idx0 !== undefined && trunkOf.has(idx0))) continue;
+    const p0 = poly[0];
+    const pn = poly.at(-1);
+    if (!p0 || !pn || Math.abs(pn.y - p0.y) < EPS) continue; // horizontal edge: no stems
+    const run = idx0 !== undefined ? runs[idx0] : undefined;
+    const sOk = (run ? straightDown(poly, run.i) : true) && onBorder(e.from, p0.y);
+    const tOk = (run ? straightUp(poly, run.j) : true) && onBorder(e.to, pn.y);
+    if (!sOk && !tOk) continue;
+    const sx = sOk ? stemOf("S", e.from, p0.x) : p0.x;
+    const tx = tOk ? stemOf("T", e.to, pn.x) : pn.x;
+    if (sx === p0.x && tx === pn.x) continue; // out-of-span both ends: genuinely distant route stays raw
+    const jog = run ? run.y : q((p0.y + pn.y) / 2);
+    polys.set(
+      id,
+      clean([
+        { x: sx, y: p0.y },
+        { x: sx, y: jog },
+        { x: tx, y: jog },
+        { x: tx, y: pn.y },
+      ]),
+    );
+  }
   for (const [idx, t] of trunkOf) {
     const r = runs[idx];
     if (!r) continue;
@@ -547,5 +375,39 @@ export const bundleEdges = (
     mine.sort((a, b) => a.i - b.i);
     pieces.set(id, mine.length ? rewrite(poly, mine) : [poly.slice()]);
   }
+  // D1 as assertion (single-stem makes a pierce impossible by construction:
+  // top stem centre+8, bottom stem centre−8) — the old mover is dead. Trip =
+  // construction bug, fail loud.
+  const sides = new Map<string, { top: number[]; bottom: number[] }>();
+  for (const [id, ps] of pieces) {
+    const e = meta.get(id);
+    if (!e || e.from === e.to) continue;
+    const s = ps[0]?.[0];
+    const t = ps.at(-1)?.at(-1);
+    for (const [pt, cardId] of [
+      [s, e.from],
+      [t, e.to],
+    ] as const) {
+      const card = pt === undefined ? undefined : rects.get(cardId);
+      if (!pt || !card) continue;
+      const side =
+        Math.abs(pt.y - card.y) < 0.5
+          ? "top"
+          : Math.abs(pt.y - (card.y + card.h)) < 0.5
+            ? "bottom"
+            : "";
+      if (!side) continue;
+      const rec = sides.get(cardId) ?? { top: [], bottom: [] };
+      rec[side].push(pt.x);
+      sides.set(cardId, rec);
+    }
+  }
+  for (const [cardId, { top, bottom }] of sides)
+    for (const b of bottom)
+      for (const t of top)
+        if (Math.abs(b - t) < 0.5)
+          throw new Error(
+            `D1 assertion: card ${cardId} pierced — top attach x=${t} == bottom attach x=${b}`,
+          );
   return { pieces, trunks };
 };

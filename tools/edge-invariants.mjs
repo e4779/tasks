@@ -7,9 +7,9 @@
 //   H1  every interior inter-edge crossing has exactly one hop arc
 //       (tasks/edge-crossing-hops.md — T-junctions stay plain, ≤2r clusters
 //       may leave later crossings plain, never overlapping arcs)
-//   H2  per card+side, attach x values pairwise distinct
-//       (tasks/attach-x-spreading.md — no collinear stub pair; reads the
-//       FINAL emitted SVG, post-D1 shifts included)
+//   S1  per card+side, exactly ONE attach x (≤1 distinct values)
+//       (tasks/single-stem-attach.md — supersedes H2 pairwise-distinct; reads
+//       the FINAL emitted SVG)
 // Curl-level: fetch the route, parse the served SVG, verdict, exit 1 on any
 // violation. Plain node, no deps.
 //
@@ -106,7 +106,7 @@ const report = {
   D3a: [],
   D3b: [],
   H1: [],
-  H2: [],
+  S1: [],
 };
 
 // --- D1: per-card bottom-attach x ∩ top-attach x = ∅ -------------------------
@@ -145,16 +145,18 @@ if (thm) {
     : `pass — incoming bottom [${rec.bottom.join(", ") || "none"}] vs outgoing top [${rec.top.join(", ") || "none"}]`;
 }
 
-// --- H2: per card+side, attach x values pairwise distinct --------------------
-// the SAME parsed attach ends D1 uses — but compared WITHIN one side. The D1
-// mover may itself shift an attach, so this reads final geometry only (the
-// emitted SVG), never pre-shift values.
+// --- S1: per card+side, exactly ONE attach x (≤1 distinct values) ------------
+// single-stem doctrine (tasks/single-stem-attach.md): every in-span end lands
+// on the side stem (inbound centre−8, outbound centre+8), so one side paints
+// one line. A second distinct x on the same side means something escaped the
+// stem (e.g. an out-of-span raw tooth) — assertion-style, final SVG only.
 for (const [path, sides] of attach)
-  for (const [side, xs] of Object.entries(sides))
-    for (let i = 0; i < xs.length; i++)
-      for (let j = i + 1; j < xs.length; j++)
-        if (Math.abs(xs[i] - xs[j]) < COLLIDE)
-          report.H2.push(`${short(path)} ${side}: attach x=${xs[i]} == x=${xs[j]}`);
+  for (const [side, xs] of Object.entries(sides)) {
+    const uniq = [];
+    for (const x of xs) if (!uniq.some((v) => Math.abs(v - x) < COLLIDE)) uniq.push(x);
+    if (uniq.length > 1)
+      report.S1.push(`${short(path)} ${side}: ${uniq.length} attach x values (${uniq.join(", ")})`);
+  }
 
 // --- D2: no vertical backtrack within one edge path ---------------------------
 for (const p of pieces) {
@@ -271,7 +273,7 @@ line(
   `H1  interior crossings ↔ hop arcs (crossings=${crossings.size} arcs=${arcs.size} skipped=${h1Skipped})`,
   report.H1,
 );
-line("H2  per-card same-side attach x pairwise distinct", report.H2);
+line("S1  per-card one attach x per side (single-stem)", report.S1);
 console.log(`thm012: ${thmVerdict}`);
 const fail =
   report.D1.length +
@@ -279,6 +281,6 @@ const fail =
   report.D3a.length +
   report.D3b.length +
   report.H1.length +
-  report.H2.length;
+  report.S1.length;
 console.log(`RESULT: ${fail === 0 ? "PASS" : `FAIL (${fail} violations)`}`);
 process.exit(fail === 0 ? 0 : 1);
