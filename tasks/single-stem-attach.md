@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Single-stem attach doctrine — one stem per card side, ±8px from centre
