@@ -6,7 +6,7 @@
 import ELK from "elkjs";
 import { cardSize, serverCtx } from "./cards.ts";
 import { packComponents } from "./components.ts";
-import { bundleEdges } from "./edge-bundler.ts";
+import { addHops, bundleEdges } from "./edge-bundler.ts";
 import { mergeEdges } from "./edges.ts";
 import { buildElkGraph, edgeId, mapLayout, polyToD } from "./elk-adapter.ts";
 import { breakCycles } from "./graph-cycles.ts";
@@ -64,6 +64,9 @@ export const renderGraph = async (
   // trunks BEFORE painting (groups of 1 are identity — bus-free corpora paint
   // exactly what they painted before)
   const { pieces, trunks } = bundleEdges(polylines, merged, rects);
+  // H1: interior inter-edge crossings get semicircle hops (vertical side hops,
+  // trunks run continuous) — points+hops serialized by polyToD afterwards
+  const hopped = addHops(pieces, trunks);
 
   // ONE coordinate world: everything below carries raw elk coords, the
   // viewBox is the only bridge to screen space — cards and edges cannot
@@ -103,7 +106,7 @@ export const renderGraph = async (
       ]),
     ); // trunk paint follows member kind
   for (const e of merged)
-    for (const poly of pieces.get(edgeId(e)) ?? []) {
+    for (const poly of hopped.get(edgeId(e)) ?? []) {
       if (poly.length < 2) continue; // unrouted edge (e.g. self-loop)
       emit(
         `edge ${e.kind}${brokenIds.has(edgeId(e)) ? " broken" : ""}`,

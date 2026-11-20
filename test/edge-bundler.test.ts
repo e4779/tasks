@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { bundleEdges } from "../src/edge-bundler";
-import { edgeId } from "../src/elk-adapter";
+import { addHops, bundleEdges } from "../src/edge-bundler";
+import { edgeId, polyToD } from "../src/elk-adapter";
 
 type Pt = { x: number; y: number };
 type Rect = { x: number; y: number; w: number; h: number };
@@ -336,4 +336,151 @@ test("empty and degenerate polylines survive (unrouted/self-loop edges)", () => 
   expect(trunks).toEqual([]);
   expect(pieces.get("void")).toEqual([[]]);
   expect(pieces.get("dot")).toEqual([[p(1, 1)]]);
+});
+
+// --- H1: crossings get semicircle hops (tasks/edge-crossing-hops.md) ---------
+
+test("H1: vertical × horizontal crossing → hop arc on the vertical, horizontal continuous", () => {
+  const e1 = { from: "a.md", to: "b.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "d.md", kind: "hard" };
+  const h = [p(322, 675), p(1725, 675)];
+  const { pieces } = bundleEdges(
+    new Map([
+      [edgeId(e1), [p(957, 100), p(957, 900)]],
+      [edgeId(e2), h],
+    ]),
+    [e1, e2],
+  );
+  const hopped = addHops(pieces, []);
+  // measured pi-etc case: hop replaces ±6 around (957, 675), sweep 1 (bump right)
+  expect(hopped.get(edgeId(e1))).toEqual([
+    [p(957, 100), p(957, 669), { x: 957, y: 681, sweep: 1 }, p(957, 900)],
+  ]);
+  expect(polyToD(hopped.get(edgeId(e1))?.[0] ?? [])).toBe(
+    "M957 100L957 669A6 6 0 0 1 957 681L957 900",
+  );
+  // the horizontal runs continuous — untouched
+  expect(hopped.get(edgeId(e2))).toEqual([h]);
+});
+
+test("H1: T-junctions stay plain joints — endpoint touch on either side", () => {
+  const e1 = { from: "a.md", to: "b.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "d.md", kind: "hard" };
+  // vertical STARTS on the horizontal (leg meeting its trunk)
+  const r1 = addHops(
+    bundleEdges(
+      new Map([
+        [edgeId(e1), [p(500, 675), p(500, 900)]],
+        [edgeId(e2), [p(100, 675), p(900, 675)]],
+      ]),
+      [e1, e2],
+    ).pieces,
+    [],
+  );
+  expect(JSON.stringify(r1.get(edgeId(e1))).includes("sweep")).toBeFalse();
+  // vertical passes at the horizontal's ENDPOINT
+  const r2 = addHops(
+    bundleEdges(
+      new Map([
+        [edgeId(e1), [p(500, 100), p(500, 900)]],
+        [edgeId(e2), [p(500, 675), p(900, 675)]],
+      ]),
+      [e1, e2],
+    ).pieces,
+    [],
+  );
+  expect(JSON.stringify(r2.get(edgeId(e1))).includes("sweep")).toBeFalse();
+});
+
+test("H1: two crossings on one vertical → two arcs, sorted in travel order", () => {
+  const e1 = { from: "a.md", to: "b.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "d.md", kind: "hard" };
+  const e3 = { from: "e.md", to: "f.md", kind: "hard" };
+  const { pieces } = bundleEdges(
+    new Map([
+      [edgeId(e1), [p(500, 100), p(500, 900)]],
+      [edgeId(e2), [p(100, 675), p(900, 675)]],
+      [edgeId(e3), [p(100, 800), p(900, 800)]],
+    ]),
+    [e1, e2, e3],
+  );
+  expect(addHops(pieces, []).get(edgeId(e1))).toEqual([
+    [
+      p(500, 100),
+      p(500, 669),
+      { x: 500, y: 681, sweep: 1 },
+      p(500, 794),
+      { x: 500, y: 806, sweep: 1 },
+      p(500, 900),
+    ],
+  ]);
+});
+
+test("H1: crossings closer than 2r → single hop, second left plain (no overlapping arcs)", () => {
+  const e1 = { from: "a.md", to: "b.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "d.md", kind: "hard" };
+  const e3 = { from: "e.md", to: "f.md", kind: "soft" }; // soft: never bundles with the hard run
+  const { pieces } = bundleEdges(
+    new Map([
+      [edgeId(e1), [p(500, 100), p(500, 900)]],
+      [edgeId(e2), [p(100, 675), p(900, 675)]],
+      [edgeId(e3), [p(100, 680), p(900, 680)]], // Δ5 < 2·6
+    ]),
+    [e1, e2, e3],
+  );
+  expect(addHops(pieces, []).get(edgeId(e1))).toEqual([
+    [p(500, 100), p(500, 669), { x: 500, y: 681, sweep: 1 }, p(500, 900)],
+  ]);
+});
+
+test("H1: same-endpoint fan edges and their trunks stay untouched (stubs are T-junctions)", () => {
+  const rect = (x: number): Rect => ({ x, y: 900, w: 80, h: 26 });
+  const e1 = { from: "src.md", to: "t1.md", kind: "hard" };
+  const e2 = { from: "src.md", to: "t2.md", kind: "hard" };
+  const { pieces, trunks } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), vhv(100, 100, 500, 672, 900)],
+      [edgeId(e2), vhv(180, 180, 700, 712, 900)],
+    ]),
+    [e1, e2],
+    new Map<string, Rect>([
+      ["src.md", { x: 80, y: 74, w: 120, h: 26 }],
+      ["t1.md", rect(460)],
+      ["t2.md", rect(660)],
+    ]),
+  );
+  const hopped = addHops(pieces, trunks);
+  expect(hopped.get(edgeId(e1))).toEqual(pieces.get(edgeId(e1)));
+  expect(hopped.get(edgeId(e2))).toEqual(pieces.get(edgeId(e2)));
+});
+
+test("H1: vertical through a real trunk hops it; upward run flips sweep (bump stays right)", () => {
+  const e1 = { from: "a.md", to: "b.md", kind: "hard" };
+  const e2 = { from: "c.md", to: "b.md", kind: "hard" };
+  const through = { from: "g.md", to: "h.md", kind: "hard" };
+  const { pieces, trunks } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), vhv(100, 100, 500, 672, 900)],
+      [edgeId(e2), vhv(400, 400, 700, 712, 900)],
+      [edgeId(through), [p(350, 100), p(350, 900)]],
+    ]),
+    [e1, e2, through],
+  );
+  expect(trunks).toEqual([{ kind: "hard", y: 692, x0: 100, x1: 700 }]);
+  expect(addHops(pieces, trunks).get(edgeId(through))).toEqual([
+    [p(350, 100), p(350, 686), { x: 350, y: 698, sweep: 1 }, p(350, 900)],
+  ]);
+  // upward run: arc from c+r down to c−r, sweep 0 — bump still faces right
+  const up = { from: "i.md", to: "j.md", kind: "hard" };
+  const { pieces: upPieces } = bundleEdges(
+    new Map<string, Pt[]>([
+      [edgeId(e1), vhv(100, 100, 500, 672, 900)],
+      [edgeId(e2), vhv(400, 400, 700, 712, 900)],
+      [edgeId(up), [p(350, 900), p(350, 100)]],
+    ]),
+    [e1, e2, up],
+  );
+  expect(addHops(upPieces, trunks).get(edgeId(up))).toEqual([
+    [p(350, 900), p(350, 698), { x: 350, y: 686, sweep: 0 }, p(350, 100)],
+  ]);
 });

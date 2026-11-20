@@ -72,9 +72,22 @@ export const buildElkGraph = (
   edges: edges.map((e) => ({ id: edgeId(e), sources: [e.from], targets: [e.to] })),
 });
 
-/** polyline → SVG path d: M then L commands, space-separated pairs */
-export const polyToD = (pts: readonly Pt[]): string =>
-  pts.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("");
+/** semicircle hop at an inter-edge crossing: arc from the previous point
+ * (x, y ∓ r) to (x, y); sweep follows travel direction so the bump always
+ * faces the same visual side (tasks/edge-crossing-hops.md) */
+export type Hop = Readonly<{ x: number; y: number; sweep: 0 | 1 }>;
+export const HOP_R = 6;
+
+/** polyline (with optional hops) → SVG path d: M/L commands, hops as arcs
+ * (space after the sweep flag keeps the d trivially parseable) */
+export const polyToD = (pts: readonly (Pt | Hop)[]): string =>
+  pts
+    .map((p, i) =>
+      "sweep" in p
+        ? `A${HOP_R} ${HOP_R} 0 0 ${p.sweep} ${p.x} ${p.y}`
+        : `${i ? "L" : "M"}${p.x} ${p.y}`,
+    )
+    .join("");
 
 /**
  * ELK speaks top-left + width/height; that IS the svg card rect (transform

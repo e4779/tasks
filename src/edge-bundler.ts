@@ -7,7 +7,7 @@
 // target paints ONE drop/rise instead of elk's per-edge fan.
 
 import type { Pt } from "./cards.ts";
-import { type ElkEdgeRef, edgeId } from "./elk-adapter.ts";
+import { type ElkEdgeRef, edgeId, HOP_R, type Hop } from "./elk-adapter.ts";
 
 export type Rect = Readonly<{ x: number; y: number; w: number; h: number }>;
 export type BundleEdge = ElkEdgeRef;
@@ -307,6 +307,70 @@ const separateAttachXs = (
  * @returns pieces (groups of 1 → identity: that edge's polyline passes through
  *   untouched) and trunks, y-then-x sorted for deterministic paint order
  */
+/**
+ * H1 (tasks/edge-crossing-hops.md): every INTERIOR crossing of two different
+ * edges gets a semicircle hop on the VERTICAL side — horizontal trunks and
+ * horizontal pieces run continuous. An intersection at a segment endpoint of
+ * either side is a T-junction (leg meeting its trunk) and stays a plain
+ * joint. Crossings closer than 2r on one vertical: hop only the first in
+ * travel order, leave the rest plain — arcs never overlap. Bus-free corpora
+ * (no crossings) emit byte-identical polylines.
+ */
+export const addHops = (
+  pieces: ReadonlyMap<string, readonly Pt[][]>,
+  trunks: readonly Trunk[],
+): Map<string, (Pt | Hop)[][]> => {
+  type HSeg = { y: number; x0: number; x1: number; owner: string | null }; // null = shared trunk
+  const hs: HSeg[] = trunks.map((t) => ({ y: t.y, x0: t.x0, x1: t.x1, owner: null }));
+  for (const [id, polys] of pieces)
+    for (const poly of polys)
+      for (let i = 1; i < poly.length; i++) {
+        const a = poly[i - 1];
+        const b = poly[i];
+        if (!a || !b) continue;
+        if (Math.abs(a.y - b.y) < EPS && Math.abs(a.x - b.x) > EPS)
+          hs.push({ y: a.y, x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), owner: id });
+      }
+  const out = new Map<string, (Pt | Hop)[][]>();
+  for (const [id, polys] of pieces)
+    out.set(
+      id,
+      polys.map((poly) => {
+        const items: (Pt | Hop)[] = [];
+        for (let k = 0; k < poly.length; k++) {
+          const a = poly[k];
+          const b = poly[k + 1];
+          if (!a) continue;
+          items.push(a);
+          if (!b || Math.abs(a.x - b.x) >= EPS) continue; // verticals hop, horizontals run
+          const y0 = Math.min(a.y, b.y);
+          const y1 = Math.max(a.y, b.y);
+          const down = b.y > a.y;
+          const ys = new Set<number>();
+          for (const h of hs) {
+            if (h.owner === id) continue; // own segments ignored (D2 keeps them disjoint anyway)
+            if (
+              Math.min(h.y - y0, y1 - h.y) > HOP_R && // interior + arc stays inside the segment
+              a.x - h.x0 > EPS &&
+              h.x1 - a.x > EPS // not the horizontal's endpoint (T-junction)
+            )
+              ys.add(h.y);
+          }
+          const cs = [...ys].sort((c, d) => (down ? c - d : d - c));
+          let last = Number.NaN;
+          for (const c of cs) {
+            if (Math.abs(c - last) < 2 * HOP_R) continue; // closer than 2r → first wins
+            const d = down ? HOP_R : -HOP_R;
+            items.push({ x: a.x, y: c - d }, { x: a.x, y: c + d, sweep: down ? 1 : 0 });
+            last = c;
+          }
+        }
+        return items;
+      }),
+    );
+  return out;
+};
+
 export const bundleEdges = (
   polylines: ReadonlyMap<string, readonly Pt[]>,
   edges: readonly BundleEdge[] = [],

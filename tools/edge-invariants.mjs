@@ -4,6 +4,9 @@
 //   D2  no vertical backtrack within one edge path (monotonic verticals)
 //   D3a no collinear consecutive segments (no phantom knees)
 //   D3b no duplicate path `d` strings in the emitted SVG (shared segments once)
+//   H1  every interior inter-edge crossing has exactly one hop arc
+//       (tasks/edge-crossing-hops.md — T-junctions stay plain, ≤2r clusters
+//       may leave later crossings plain, never overlapping arcs)
 // Curl-level: fetch the route, parse the served SVG, verdict, exit 1 on any
 // violation. Plain node, no deps.
 //
@@ -51,20 +54,56 @@ const cards = [
   w: Number(m[4]),
   h: Number(m[5]),
 }));
-const paths = [...main.matchAll(/<path class="edge([^"]*)"[^>]*?d="([^"]+)"/g)].map((m) => ({
-  cls: (m[1] ?? "").trim(),
-  d: m[2] ?? "",
-  trunk: (m[1] ?? "").includes("trunk"),
-  from: decode(/data-from="([^"]*)"/.exec(m[0] ?? "")?.[1] ?? "") || null,
-  to: decode(/data-to="([^"]*)"/.exec(m[0] ?? "")?.[1] ?? "") || null,
-  poly: [...(m[2] ?? "").matchAll(/[ML](-?[\d.eE+-]+) (-?[\d.eE+-]+)/g)].map((p) => ({
-    x: Number(p[1]),
-    y: Number(p[2]),
-  })),
-}));
+// command-aware d parse: M/L points carry an arcIn flag (incoming segment is
+// a hop chord); arcs keep their chord as a segment — a hop replaces ±r of the
+// vertical, the chord keeps the same x
+const parseD = (d) => {
+  const items = [];
+  const re =
+    /([ML])(-?[\d.eE+-]+) (-?[\d.eE+-]+)|A(-?[\d.eE+-]+) (-?[\d.eE+-]+) (-?[\d.eE+-]+) (\d) (\d) (-?[\d.eE+-]+) (-?[\d.eE+-]+)/g;
+  let arcIn = false;
+  for (const m of d.matchAll(re)) {
+    if (m[1] !== undefined) {
+      items.push({ cmd: m[1], x: Number(m[2]), y: Number(m[3]), arcIn });
+      arcIn = false;
+    } else {
+      items.push({ cmd: "A", x: Number(m[9]), y: Number(m[10]), r: Number(m[4]) });
+      arcIn = true;
+    }
+  }
+  return items;
+};
+const paths = [...main.matchAll(/<path class="edge([^"]*)"[^>]*?d="([^"]+)"/g)].map((m) => {
+  const items = parseD(m[2] ?? "");
+  const segs = [];
+  let prev = null;
+  for (const it of items) {
+    if (prev && it.cmd !== "M")
+      segs.push({ x0: prev.x, y0: prev.y, x1: it.x, y1: it.y, arc: it.cmd === "A" });
+    prev = { x: it.x, y: it.y };
+  }
+  return {
+    cls: (m[1] ?? "").trim(),
+    d: m[2] ?? "",
+    trunk: (m[1] ?? "").includes("trunk"),
+    from: decode(/data-from="([^"]*)"/.exec(m[0] ?? "")?.[1] ?? "") || null,
+    to: decode(/data-to="([^"]*)"/.exec(m[0] ?? "")?.[1] ?? "") || null,
+    poly: items.filter((it) => it.cmd !== "A"),
+    segs,
+  };
+});
 const pieces = paths.filter((p) => !p.trunk);
 
-const report = { url, cards: cards.length, paths: paths.length, D1: [], D2: [], D3a: [], D3b: [] };
+const report = {
+  url,
+  cards: cards.length,
+  paths: paths.length,
+  D1: [],
+  D2: [],
+  D3a: [],
+  D3b: [],
+  H1: [],
+};
 
 // --- D1: per-card bottom-attach x ∩ top-attach x = ∅ -------------------------
 // attach = a piece endpoint sitting on a card's top or bottom border
@@ -143,6 +182,7 @@ for (const p of pieces) {
     const b = p.poly[i];
     const c = p.poly[i + 1];
     if (!a || !b || !c) continue;
+    if (b.arcIn || c.arcIn) continue; // hop arc endpoint — the arc IS the marker, not a knee
     const colX = Math.abs(a.x - b.x) <= EPS && Math.abs(b.x - c.x) <= EPS;
     const colY = Math.abs(a.y - b.y) <= EPS && Math.abs(b.y - c.y) <= EPS;
     if (colX || colY) report.D3a.push(`${name}: collinear knee at ${JSON.stringify(b)}`);
@@ -153,6 +193,49 @@ for (const p of pieces) {
 const counts = new Map();
 for (const p of paths) counts.set(p.d, (counts.get(p.d) ?? 0) + 1);
 for (const [d, n] of counts) if (n > 1) report.D3b.push(`${n}× ${d}`);
+
+// --- H1: every interior inter-edge crossing has exactly one hop arc -----------
+// interior = strictly inside both segments (EPS margin); an intersection at a
+// segment endpoint of either side is a T-junction (leg meeting its trunk) and
+// never counts. A crossing is satisfied when a hop chord covers it; a plain
+// crossing is legitimate only where the hop was suppressed by the anti-
+// overlap rule (within r of its segment end — mirrors src/edge-bundler.ts).
+const HOP_R = 6;
+const vert = [];
+const horiz = [];
+for (const p of paths)
+  for (const s of p.segs) {
+    if (Math.abs(s.x0 - s.x1) <= EPS)
+      vert.push({ x: s.x0, lo: Math.min(s.y0, s.y1), hi: Math.max(s.y0, s.y1), arc: s.arc, p });
+    else if (Math.abs(s.y0 - s.y1) <= EPS)
+      horiz.push({ y: s.y0, x0: Math.min(s.x0, s.x1), x1: Math.max(s.x0, s.x1), p });
+  }
+const arcs = new Set(); // distinct vertical hop chords "x|lo|hi"
+for (const v of vert) if (v.arc) arcs.add(`${v.x}|${v.lo}|${v.hi}`);
+const crossings = new Map(); // "x|y" → { x, y, cov, seg }
+for (const v of vert)
+  for (const h of horiz) {
+    if (v.p === h.p) continue; // one painted line never crosses itself
+    if (v.x - h.x0 <= EPS || h.x1 - v.x <= EPS) continue; // horizontal endpoint — T-junction
+    if (h.y - v.lo <= EPS || v.hi - h.y <= EPS) continue; // vertical endpoint — T-junction
+    const rec = crossings.get(`${v.x}|${h.y}`) ?? { x: v.x, y: h.y, cov: 0, seg: null };
+    if (v.arc) rec.cov++;
+    else rec.seg = { lo: v.lo, hi: v.hi };
+    crossings.set(`${v.x}|${h.y}`, rec);
+  }
+let h1Skipped = 0;
+for (const rec of crossings.values()) {
+  if (rec.cov > 0) continue;
+  const near = rec.seg !== null && Math.min(rec.y - rec.seg.lo, rec.seg.hi - rec.y) <= HOP_R + EPS;
+  if (near)
+    h1Skipped++; // ≤2r cluster: the first hop won, this one stays plain
+  else report.H1.push(`crossing (${rec.x}, ${rec.y}) has no hop arc`);
+}
+for (const key of arcs) {
+  const [x, lo, hi] = key.split("|").map(Number);
+  const covers = [...crossings.values()].some((r) => r.x === x && r.y > lo && r.y < hi);
+  if (!covers) report.H1.push(`hop arc ${key} covers no crossing`);
+}
 
 // --- report -------------------------------------------------------------------
 const line = (label, list) => {
@@ -169,7 +252,12 @@ line("D1  per-card bottom ∩ top attach x = ∅", report.D1);
 line("D2  no vertical backtrack in a path", report.D2);
 line("D3a no collinear consecutive segments", report.D3a);
 line("D3b no duplicate path d strings", report.D3b);
+line(
+  `H1  interior crossings ↔ hop arcs (crossings=${crossings.size} arcs=${arcs.size} skipped=${h1Skipped})`,
+  report.H1,
+);
 console.log(`thm012: ${thmVerdict}`);
-const fail = report.D1.length + report.D2.length + report.D3a.length + report.D3b.length;
+const fail =
+  report.D1.length + report.D2.length + report.D3a.length + report.D3b.length + report.H1.length;
 console.log(`RESULT: ${fail === 0 ? "PASS" : `FAIL (${fail} violations)`}`);
 process.exit(fail === 0 ? 0 : 1);
