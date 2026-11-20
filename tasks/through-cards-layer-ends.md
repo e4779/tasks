@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Through-cards sort to layer ends — crossing-free deep edges

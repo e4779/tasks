@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Transitive reduction — implied blocked-by edges off the picture

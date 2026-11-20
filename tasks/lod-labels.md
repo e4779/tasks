@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # LOD labels — card text fades at far zoom

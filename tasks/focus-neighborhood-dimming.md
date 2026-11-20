@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Focus mode — click a card, its neighborhood lights up
