@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Attach-x spreading — no two edges share a card attach point
