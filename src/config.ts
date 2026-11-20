@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 // v0 key set is closed: an unknown key in a .tsk.conf warns and is ignored
-const KNOWN_KEYS = new Set(["discover", "statuses", "status.terminals", "status.aliases"]);
+const KNOWN_KEYS = new Set([
+  "discover",
+  "statuses",
+  "status.terminals",
+  "status.aliases",
+  "reduction",
+]);
 
 export type TskConf = Readonly<Record<string, string>>;
 
@@ -81,6 +87,10 @@ export const statusesOf = (conf: TskConf): ReadonlySet<string> =>
 
 export const terminalsOf = (conf: TskConf): readonly string[] =>
   conf["status.terminals"] ? splitList(conf["status.terminals"]) : DEFAULT_TERMINALS;
+
+// transitive reduction of the /graph picture (tasks/transitive-reduction.md);
+// the literal "off" restores the full edge set, everything else renders reduced
+export const reductionOf = (conf: TskConf): boolean => conf.reduction !== "off";
 
 export const aliasMap = (conf: TskConf): ReadonlyMap<string, string> =>
   new Map(

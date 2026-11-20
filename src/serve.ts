@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { basename, dirname, extname, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
-import { DEFAULT_TERMINALS, loadConfig, terminalsOf } from "./config.ts";
+import { DEFAULT_TERMINALS, loadConfig, reductionOf, terminalsOf } from "./config.ts";
 import { discover } from "./discover.ts";
 import type { Graph } from "./graph.ts";
 import { buildGraph } from "./graph.ts";
@@ -180,7 +180,7 @@ export const startServer = async (
           : html(page({ active: "list", title: "list — tsk", body, filters }));
       }
       const { nodes, edges } = filtered(m.snap, q, status, true); // graph keeps ghosts (ghost edges included)
-      const body = await renderGraph(nodes, edges, docHref);
+      const body = await renderGraph(nodes, edges, docHref, reductionOf(m.conf));
       const filters = filterForm("graph", q, status);
       return frag
         ? html(mainFragment("graph — tsk", body, filters))
